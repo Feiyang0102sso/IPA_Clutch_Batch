@@ -82,7 +82,7 @@ def install_and_crack_all_ipas(
             continue
 
         logger.info(f"Target bundle ID: {ipa_info.bundle_identifier}")
-        compatibility_error = get_ipa_compatibility_error(ipa_path, device_info)
+        compatibility_error = get_ipa_compatibility_error(ipa_info, device_info)
         if compatibility_error is not None:
             install_failed_count += 1
             logger.error(f"Compatibility check failed: {compatibility_error}")

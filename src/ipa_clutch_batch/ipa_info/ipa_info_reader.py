@@ -10,12 +10,18 @@ import zipfile
 
 from ipa_clutch_batch.logger import logger
 
-INFO_PLIST_SUFFIX = ".app/Info.plist"
+# -- IPA zip structure constants --
 PAYLOAD_PREFIX = "Payload/"
+INFO_PLIST_SUFFIX = ".app/Info.plist"
+
+# -- Info.plist key constants --
 DISPLAY_NAME_KEY = "CFBundleDisplayName"
-BUNDLE_VERSION_KEY = "CFBundleVersion"  # CFBundleShortVersionString
+BUNDLE_VERSION_KEY = "CFBundleVersion"
 SHORT_VERSION_KEY = "CFBundleShortVersionString"
 BUNDLE_IDENTIFIER_KEY = "CFBundleIdentifier"
+DEVICE_FAMILY_KEY = "UIDeviceFamily"
+MINIMUM_OS_VERSION_KEY = "MinimumOSVersion"
+
 DOTTED_VERSION_PATTERN = re.compile(r"^\d+\.\d+(?:\.\d+)?$")
 
 
@@ -29,8 +35,11 @@ class IpaInfo:
     bundle_version: str | None
     short_version: str | None
     bundle_identifier: str
+    device_families: list[int]
+    minimum_os_version: str | None
 
-
+# initially designed... but not widely used now
+# keep it in case it will be used
 def get_all_ipa_info_from_directory(input_dir: Path):
     """Scan all IPA files in the directory and log their metadata."""
     ipa_paths = sorted(input_dir.glob("*.ipa"))
@@ -60,7 +69,7 @@ def get_all_ipa_info_from_directory(input_dir: Path):
 
 def get_single_ipa_info(ipa_path: Path) -> IpaInfo | None:
     """
-    Read display name, version, and bundle identifier from an IPA archive.
+    Universal Reader to get infos from an IPA archive.
 
     Logs an error and returns None if anything is missing.
     """
@@ -104,6 +113,8 @@ def get_single_ipa_info(ipa_path: Path) -> IpaInfo | None:
         bundle_version=bundle_version,
         short_version=short_version,
         bundle_identifier=bundle_identifier,
+        device_families=_parse_device_families(plist_data),
+        minimum_os_version=plist_data.get(MINIMUM_OS_VERSION_KEY),
     )
 
 
@@ -156,3 +167,22 @@ def _find_info_plist(ipa_path: Path) -> str | None:
             if name.startswith(PAYLOAD_PREFIX) and name.endswith(INFO_PLIST_SUFFIX):
                 return name
     return None
+
+
+def _parse_device_families(plist_data: dict) -> list[int]:
+    """Read UIDeviceFamily as a normalized integer list."""
+    raw_families = plist_data.get(DEVICE_FAMILY_KEY, [])
+    families = []
+
+    if isinstance(raw_families, int):
+        families.append(raw_families)
+        return families
+
+    if not isinstance(raw_families, list):
+        return families
+
+    for raw_family in raw_families:
+        if isinstance(raw_family, int):
+            families.append(raw_family)
+
+    return families

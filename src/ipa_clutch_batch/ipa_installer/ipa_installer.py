@@ -3,21 +3,15 @@ Install an IPA on an iOS device.
 """
 from dataclasses import dataclass
 from pathlib import Path
-import plistlib
 import subprocess
-import zipfile
 
 from ipa_clutch_batch.config import get_ideviceinstaller_path
 from ipa_clutch_batch.device_connector import (
     DeviceInfo,
     get_single_connected_device_udid,
 )
+from ipa_clutch_batch.ipa_info import IpaInfo, get_single_ipa_info
 from ipa_clutch_batch.logger import logger
-
-PAYLOAD_PREFIX = "Payload/"
-INFO_PLIST_SUFFIX = ".app/Info.plist"
-DEVICE_FAMILY_KEY = "UIDeviceFamily"
-MINIMUM_OS_VERSION_KEY = "MinimumOSVersion"
 
 
 @dataclass(frozen=True)
@@ -124,7 +118,12 @@ def install_all_ipas(input_dir: Path, device_info: DeviceInfo) -> BatchInstallSu
     for install_index, ipa_path in enumerate(ipa_paths, start=1):
         logger.info(f"Install [{install_index}/{total_count}]: {ipa_path.name}")
 
-        compatibility_error = get_ipa_compatibility_error(ipa_path, device_info)
+        ipa_info = get_single_ipa_info(ipa_path)
+        if ipa_info is None:
+            failed_count += 1
+            continue
+
+        compatibility_error = get_ipa_compatibility_error(ipa_info, device_info)
         if compatibility_error is not None:
             failed_count += 1
             logger.error(f"Compatibility check failed: {compatibility_error}")
@@ -155,21 +154,16 @@ def install_all_ipas(input_dir: Path, device_info: DeviceInfo) -> BatchInstallSu
 
 
 def get_ipa_compatibility_error(
-    ipa_path: Path,
+    ipa_info: IpaInfo,
     device_info: DeviceInfo,
 ) -> str | None:
     """Return a clear compatibility error before installation when possible."""
-    info_plist = _read_info_plist(ipa_path)
-    if info_plist is None:
-        return "Cannot read Payload/*.app/Info.plist."
-
-    supported_families = _get_supported_device_families(info_plist)
-    if supported_families and device_info.device_family not in supported_families:
-        supported_names = _format_device_families(supported_families)
+    if ipa_info.device_families and device_info.device_family not in ipa_info.device_families:
+        supported_names = _format_device_families(ipa_info.device_families)
         current_name = _format_device_families([device_info.device_family])
         return f"App supports {supported_names}, but connected device is {current_name}."
 
-    minimum_os_version = info_plist.get(MINIMUM_OS_VERSION_KEY)
+    minimum_os_version = ipa_info.minimum_os_version
     if isinstance(minimum_os_version, str) and minimum_os_version:
         if _compare_versions(device_info.product_version, minimum_os_version) < 0:
             return (
@@ -178,48 +172,6 @@ def get_ipa_compatibility_error(
             )
 
     return None
-
-
-def _read_info_plist(ipa_path: Path) -> dict | None:
-    """Read the main application Info.plist from an IPA archive."""
-    try:
-        with zipfile.ZipFile(ipa_path, "r") as ipa_archive:
-            info_plist_path = None
-            for archive_path in ipa_archive.namelist():
-                if archive_path.startswith(PAYLOAD_PREFIX) and archive_path.endswith(
-                    INFO_PLIST_SUFFIX
-                ):
-                    info_plist_path = archive_path
-                    break
-
-            if info_plist_path is None:
-                return None
-
-            info_plist_data = ipa_archive.read(info_plist_path)
-            return plistlib.loads(info_plist_data)
-    except zipfile.BadZipFile:
-        return None
-    except plistlib.InvalidFileException:
-        return None
-
-
-def _get_supported_device_families(info_plist: dict) -> list[int]:
-    """Read UIDeviceFamily as a normalized integer list."""
-    raw_families = info_plist.get(DEVICE_FAMILY_KEY, [])
-    supported_families = []
-
-    if isinstance(raw_families, int):
-        supported_families.append(raw_families)
-        return supported_families
-
-    if not isinstance(raw_families, list):
-        return supported_families
-
-    for raw_family in raw_families:
-        if isinstance(raw_family, int):
-            supported_families.append(raw_family)
-
-    return supported_families
 
 
 def _format_device_families(device_families: list[int]) -> str:

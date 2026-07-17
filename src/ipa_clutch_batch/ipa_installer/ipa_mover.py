@@ -3,10 +3,8 @@ Move dumped IPA files from the iOS device and rename them on the computer.
 """
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-import plistlib
 import re
 import tempfile
-import zipfile
 
 import paramiko
 
@@ -116,15 +114,9 @@ def _move_single_ipa(
         temp_path.unlink(missing_ok=True)
         return False
 
-    try:
-        ipa_info = get_single_ipa_info(temp_path)
-    except (plistlib.InvalidFileException, zipfile.BadZipFile) as error:
-        logger.error(f"Cannot read downloaded IPA metadata: {error}")
-        temp_path.unlink(missing_ok=True)
-        return False
-
+    ipa_info = get_single_ipa_info(temp_path)
     if ipa_info is None:
-        logger.error(f"Downloaded IPA metadata is incomplete: {remote_ipa_path}")
+        logger.error(f"Downloaded IPA metadata is incomplete or invalid: {remote_ipa_path}")
         temp_path.unlink(missing_ok=True)
         return False
 
