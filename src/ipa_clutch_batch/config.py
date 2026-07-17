@@ -84,34 +84,48 @@ LOG_FILE_NAME = "ipa_clutch_batch.log"
 LOG_FILE_PATH = ROOT_DIR / LOG_FILE_NAME
 
 INPUT_DIR = ROOT_DIR / "input"
-CRACKED_DIR = INPUT_DIR / "Cracked"
-TOOLS_DIR = ROOT_DIR / "tools"
-IDEVICEINSTALLER_PATH = TOOLS_DIR / "libimobiledevice" / "ideviceinstaller.exe"
+CRACKED_DIR = INPUT_DIR / "cracked"
+LIBIMOBILE_DIR = ROOT_DIR / "libimobile"
+IDEVICE_ID_PATH = LIBIMOBILE_DIR / "idevice_id.exe"
+IDEVICEINFO_PATH = LIBIMOBILE_DIR / "ideviceinfo.exe"
+IDEVICEINSTALLER_PATH = LIBIMOBILE_DIR / "ideviceinstaller.exe"
+IPROXY_PATH = LIBIMOBILE_DIR / "iproxy.exe"
 
 SSH_HOST = "127.0.0.1"
-SSH_PORT = 22
+SSH_LOCAL_PORT = 22
+SSH_DEVICE_PORT = 22
 SSH_USERNAME = "root"
 SSH_PASSWORD = "alpine"
+SSH_CONNECT_TIMEOUT_SECONDS = 10
 
-CLUTCH_DUMP_DIR = "/var/mobile/Documents/Dumped"
+CLUTCH_DUMP_DIR = "/private/var/mobile/Documents/Dumped"
 CRACKED_FILENAME_SUFFIX = "_cracked"
 
 
-def get_input_dir() -> Path:
+def get_input_dir(input_path: Path | None = None) -> Path:
     """
     Verify and return the IPA input directory.
     """
-    if not INPUT_DIR.exists():
-        logger.warning(f"Input directory not found at: {INPUT_DIR}")
-    return INPUT_DIR
+    resolved_input_dir = INPUT_DIR
+    if input_path is not None:
+        resolved_input_dir = input_path.expanduser().resolve()
+
+    if not resolved_input_dir.exists():
+        logger.warning(f"Input directory not found at: {resolved_input_dir}")
+    return resolved_input_dir
 
 
-def get_cracked_dir() -> Path:
+def get_cracked_dir(input_dir: Path | None = None) -> Path:
     """
     Return the final cracked IPA directory under the input directory.
     """
-    CRACKED_DIR.mkdir(parents=True, exist_ok=True)
-    return CRACKED_DIR
+    resolved_input_dir = INPUT_DIR
+    if input_dir is not None:
+        resolved_input_dir = input_dir
+
+    cracked_dir = resolved_input_dir / "cracked"
+    cracked_dir.mkdir(parents=True, exist_ok=True)
+    return cracked_dir
 
 
 def get_ideviceinstaller_path() -> Path:
@@ -121,15 +135,47 @@ def get_ideviceinstaller_path() -> Path:
     return IDEVICEINSTALLER_PATH
 
 
-def init_app_env():
+def get_idevice_id_path() -> Path:
+    """
+    Return the expected idevice_id executable path.
+    """
+    return IDEVICE_ID_PATH
+
+
+def get_ideviceinfo_path() -> Path:
+    """
+    Return the expected ideviceinfo executable path.
+    """
+    return IDEVICEINFO_PATH
+
+
+def get_iproxy_path() -> Path:
+    """
+    Return the expected iproxy executable path.
+    """
+    return IPROXY_PATH
+
+
+def init_app_env(input_dir: Path | None = None):
     """
     Initial bootstrap with default paths.
     """
+    runtime_input_dir = INPUT_DIR
+    if input_dir is not None:
+        runtime_input_dir = input_dir
+    runtime_cracked_dir = runtime_input_dir / "cracked"
+
     add_file_handler(LOG_FILE_PATH)
     logger.debug(get_runtime_mode_message())
     logger.debug(f"Root Path: {ROOT_DIR}")
     logger.debug(f"Log File Path: {LOG_FILE_PATH}")
-    logger.debug(f"Input Path: {INPUT_DIR}")
-    logger.debug(f"Cracked Path: {CRACKED_DIR}")
+    logger.debug(f"Input Path: {runtime_input_dir}")
+    logger.debug(f"Cracked Path: {runtime_cracked_dir}")
     logger.debug(f"Clutch Dump Path: {CLUTCH_DUMP_DIR}")
-    logger.debug(f"Tool Path: {IDEVICEINSTALLER_PATH}")
+    logger.debug(f"Device ID Tool Path: {IDEVICE_ID_PATH}")
+    logger.debug(f"Device Info Tool Path: {IDEVICEINFO_PATH}")
+    logger.debug(f"Installer Tool Path: {IDEVICEINSTALLER_PATH}")
+    logger.debug(f"USB Proxy Tool Path: {IPROXY_PATH}")
+    logger.debug(
+        f"SSH Tunnel: {SSH_HOST}:{SSH_LOCAL_PORT} -> device:{SSH_DEVICE_PORT}"
+    )

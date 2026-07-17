@@ -9,6 +9,9 @@ name = "ipa-clutch-batch"
 dynamic = ["version"]
 description = "Batch install IPA files and run Clutch over an SSH tunnel."
 requires-python = ">=3.10"
+dependencies = [
+    "paramiko==3.5.1",
+]
 
 [project.scripts]
 # configure command line entry point
