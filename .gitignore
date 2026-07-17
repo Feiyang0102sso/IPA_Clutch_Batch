@@ -1,0 +1,35 @@
+# IDE
+.idea/
+.vscode/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Local environment files
+.env
+.env.*
+
+# Python packaging
+*.egg-info/
+build/
+dist/
+
+# Logs and runtime output
+*.log
+*.tmp
+
+# Project runtime directories
+input/
+tools/

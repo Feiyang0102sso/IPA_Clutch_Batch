@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipa-clutch-batch"
+dynamic = ["version"]
+description = "Batch install IPA files and run Clutch over an SSH tunnel."
+requires-python = ">=3.10"
+
+[project.scripts]
+ipa-clutch-batch = "main:main"
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["config", "logger", "main", "version"]
+
+[tool.setuptools.dynamic]
+version = {attr = "version.__version__"}
+
+
+[tool.pytest.ini_options]
+addopts = "-v --tb=short --show-capture=no"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "pytest: run all tests (pytest)",
+    "unit: unit tests under tests/unit (pytest --unit)",
+]
