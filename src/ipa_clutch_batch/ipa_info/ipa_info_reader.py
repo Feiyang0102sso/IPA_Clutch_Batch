@@ -71,26 +71,22 @@ def get_single_ipa_info(ipa_path: Path) -> IpaInfo | None:
     """
     Universal Reader to get infos from an IPA archive.
 
-    Logs an error and returns None if anything is missing.
+    Logs an error and returns None when the archive or required metadata is invalid.
     """
     resolved_path = ipa_path.expanduser().resolve()
-
-    # locate Info.plist
-    plist_entry = _find_info_plist(resolved_path)
-    if plist_entry is None:
-        logger.error(f"Cannot find Info.plist in {ipa_path.name}")
-        # logger.error(f"IPA path: {resolved_path}")
+    plist_data = _read_info_plist(resolved_path)
+    if plist_data is None:
         return None
-
-    # parse plist and extract infos
-    with zipfile.ZipFile(resolved_path, "r") as zf:
-        plist_data = plistlib.loads(zf.read(plist_entry))
 
     display_name = plist_data.get(DISPLAY_NAME_KEY)
     bundle_version = normalize_version_value(plist_data.get(BUNDLE_VERSION_KEY))
     short_version = normalize_version_value(plist_data.get(SHORT_VERSION_KEY))
     version = select_preferred_version(bundle_version, short_version)
     bundle_identifier = plist_data.get(BUNDLE_IDENTIFIER_KEY)
+    device_families = _parse_device_families(plist_data)
+    minimum_os_version = normalize_version_value(
+        plist_data.get(MINIMUM_OS_VERSION_KEY)
+    )
 
     missing_keys = []
 
@@ -100,6 +96,10 @@ def get_single_ipa_info(ipa_path: Path) -> IpaInfo | None:
         missing_keys.append(f"{BUNDLE_VERSION_KEY}' or '{SHORT_VERSION_KEY}")
     if not isinstance(bundle_identifier, str) or not bundle_identifier:
         missing_keys.append(BUNDLE_IDENTIFIER_KEY)
+    if not device_families:
+        missing_keys.append(DEVICE_FAMILY_KEY)
+    if minimum_os_version is None:
+        missing_keys.append(MINIMUM_OS_VERSION_KEY)
 
     if missing_keys:
         for key in missing_keys:
@@ -113,8 +113,8 @@ def get_single_ipa_info(ipa_path: Path) -> IpaInfo | None:
         bundle_version=bundle_version,
         short_version=short_version,
         bundle_identifier=bundle_identifier,
-        device_families=_parse_device_families(plist_data),
-        minimum_os_version=plist_data.get(MINIMUM_OS_VERSION_KEY),
+        device_families=device_families,
+        minimum_os_version=minimum_os_version,
     )
 
 
@@ -157,15 +157,49 @@ def normalize_version_value(version_value: object) -> str | None:
     return normalized_version
 
 
-def _find_info_plist(ipa_path: Path) -> str | None:
+def _read_info_plist(resolved_path: Path) -> dict | None:
+    """Read and validate the main Info.plist from an IPA archive."""
+    try:
+        with zipfile.ZipFile(resolved_path, "r") as ipa_archive:
+            # locate Info.plist
+            plist_entry = _find_info_plist(ipa_archive)
+            if plist_entry is None:
+                logger.error(f"Cannot find Info.plist in {resolved_path.name}")
+                # logger.error(f"IPA path: {resolved_path}")
+                return None
+
+            # parse plist and extract infos
+            plist_bytes = ipa_archive.read(plist_entry)
+            plist_data = plistlib.loads(plist_bytes)
+
+    except zipfile.BadZipFile as error:
+        logger.error(f"Invalid IPA archive ({resolved_path.name}): {error}")
+        return None
+    except plistlib.InvalidFileException as error:
+        logger.error(f"Invalid Info.plist ({resolved_path.name}): {error}")
+        return None
+    except (OSError, RuntimeError, NotImplementedError) as error:
+        logger.error(f"Cannot read IPA file ({resolved_path.name}): {error}")
+        return None
+
+    if not isinstance(plist_data, dict):
+        logger.error(
+            f"Info.plist root is not a dictionary ({resolved_path.name})"
+        )
+        return None
+    return plist_data
+
+
+def _find_info_plist(ipa_archive: zipfile.ZipFile) -> str | None:
     """
     Find Payload/*.app/Info.plist in the IPA zip.
     Returns None if not found.
     """
-    with zipfile.ZipFile(ipa_path, "r") as zf:
-        for name in zf.namelist():
-            if name.startswith(PAYLOAD_PREFIX) and name.endswith(INFO_PLIST_SUFFIX):
-                return name
+    for archive_path in ipa_archive.namelist():
+        if archive_path.startswith(PAYLOAD_PREFIX) and archive_path.endswith(
+            INFO_PLIST_SUFFIX
+        ):
+            return archive_path
     return None
 
 
