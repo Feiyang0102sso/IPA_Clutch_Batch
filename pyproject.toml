@@ -11,16 +11,21 @@ description = "Batch install IPA files and run Clutch over an SSH tunnel."
 requires-python = ">=3.10"
 
 [project.scripts]
-ipa-clutch-batch = "main:main"
-
+# configure command line entry point
+# just type ipa-clutch-batch in console
+ipa-clutch-batch = "ipa_clutch_batch.main:main"
 
 [tool.setuptools]
+# all source code is under src folder
 package-dir = {"" = "src"}
-py-modules = ["config", "logger", "main", "version"]
+
+[tool.setuptools.packages.find]
+# find all python packages under src folder
+where = ["src"]
 
 [tool.setuptools.dynamic]
-version = {attr = "version.__version__"}
-
+# find variable __version__ in ipa_clutch_batch.version.__version__
+version = {attr = "ipa_clutch_batch.version.__version__"}
 
 [tool.pytest.ini_options]
 addopts = "-v --tb=short --show-capture=no"
