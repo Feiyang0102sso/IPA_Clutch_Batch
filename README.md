@@ -15,11 +15,11 @@
 > Only process IPA files that you legally own and are allowed to inspect.
 > You are responsible for complying with local laws, software licenses, and platform rules.
 
-IPA Clutch Batch is a small Windows-focused batch workflow tool for installing IPA files to a jailbroken iOS device, running Clutch on each app, and collecting the dumped IPA files back to the computer.
+IPA Clutch Batch is a Windows-focused batch cracking assistant for jailbroken iOS devices. It lets you run the whole IPA cracking workflow from your computer: batch install IPA files, batch run Clutch, then pull all dumped IPA files back and rename them automatically. No more staring at a console and manually installing, reinstalling, and typing commands for every single app. Faster, cleaner, and a little less painful. **🤓👍**
 
 ### What It Does
 
-The workflow is intentionally simple:
+The batch workflow is intentionally simple:
 
 1. Install IPA files one by one.
 2. Run Clutch on each installed app one by one.
@@ -86,11 +86,11 @@ I do not currently know whether there is a matching English tutorial on YouTube.
 > 请只处理你合法拥有且被允许检查的 IPA 文件。
 > 你需要自行遵守当地法律、软件许可协议和平台规则。
 
-IPA Clutch Batch 是一个面向 Windows 的批处理工具，用于将 IPA 文件安装到已越狱的 iOS 设备上，逐个调用 Clutch 进行砸壳，并将导出的 IPA 文件统一拉回电脑。
+IPA Clutch Batch 是一个面向 Windows 的电脑端批量砸壳助手，用于配合已越狱的 iOS 设备批量处理 IPA 文件。它可以在电脑上一口气完成批量安装、批量调用 Clutch 砸壳、统一拉回导出的 IPA 文件，并自动批量重命名。不用再像以前一样一直盯着控制台，一个个安装、重新安装、手动输入命令。更快，更省事，也更少折磨。**🤓👍**
 
 ### 项目做什么
 
-整体流程刻意保持简单：
+批量流程刻意保持简单：
 
 1. 一个个安装 IPA 文件。
 2. 一个个对已安装的 App 执行 Clutch 砸壳。
