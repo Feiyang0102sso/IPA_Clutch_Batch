@@ -1,9 +1,12 @@
 """
 Install an IPA on an iOS device.
 """
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
+from uuid import uuid4
 
 from ipa_clutch_batch.common.command_runner import (
     log_command_output,
@@ -42,6 +45,27 @@ class BatchInstallSummary:
     failed: int
 
 
+@contextmanager
+def use_ascii_ipa_path(ipa_path: Path) -> Iterator[Path]:
+    """Provide an ASCII filename for installers that mishandle Chinese names."""
+    if ipa_path.name.isascii():
+        yield ipa_path
+        return
+
+    temporary_name = f".ipa_install_{uuid4().hex}.ipa"
+    temporary_path = ipa_path.with_name(temporary_name)
+
+    # A hard link exposes the same IPA data without copying a large file.
+    temporary_path.hardlink_to(ipa_path)
+    logger.debug(f"Created temporary ASCII IPA path: {temporary_path.name}")
+
+    try:
+        yield temporary_path
+    finally:
+        temporary_path.unlink(missing_ok=True)
+        logger.debug(f"Removed temporary ASCII IPA path: {temporary_path.name}")
+
+
 def install_ipa(
     ipa_path: Path,
     udid: str | None = None,
@@ -75,14 +99,15 @@ def install_ipa(
         return None
 
     logger.info(f"Installing IPA: {resolved_ipa_path.name}")
-    command = [
-        str(installer_path),
-        "--udid",
-        target_udid,
-        "install",
-        str(resolved_ipa_path),
-    ]
-    completed_process = run_command(command)
+    with use_ascii_ipa_path(resolved_ipa_path) as installer_ipa_path:
+        command = [
+            str(installer_path),
+            "--udid",
+            target_udid,
+            "install",
+            str(installer_ipa_path),
+        ]
+        completed_process = run_command(command)
     if completed_process is None:
         return None
 
