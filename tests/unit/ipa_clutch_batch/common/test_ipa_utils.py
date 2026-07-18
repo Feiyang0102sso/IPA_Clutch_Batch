@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ipa_clutch_batch.common.ipa_utils import _ipa_sort_key
+from ipa_clutch_batch.common.ipa_utils import ipa_sort_key
 
 
 def test_ipa_sort_key_orders_filenames_without_case_sensitivity():
@@ -13,7 +13,7 @@ def test_ipa_sort_key_orders_filenames_without_case_sensitivity():
         Path("Beta.ipa"),
     ]
 
-    sorted_ipa_paths = sorted(ipa_paths, key=_ipa_sort_key)
+    sorted_ipa_paths = sorted(ipa_paths, key=ipa_sort_key)
 
     assert sorted_ipa_paths == [
         Path("alpha.ipa"),

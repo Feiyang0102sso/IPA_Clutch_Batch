@@ -6,8 +6,8 @@ from pathlib import Path
 import plistlib
 
 from ipa_clutch_batch.common.command_runner import (
-    _log_command_output,
-    _run_command,
+    log_command_output,
+    run_command,
 )
 from ipa_clutch_batch.config import get_idevice_id_path, get_ideviceinfo_path
 from ipa_clutch_batch.logger import logger
@@ -36,7 +36,7 @@ def get_connected_device_udids(idevice_id_path: Path | None = None) -> list[str]
         return []
 
     command = [str(tool_path), "--list"]
-    completed_process = _run_command(command)
+    completed_process = run_command(command)
     if completed_process is None:
         return []
 
@@ -44,7 +44,7 @@ def get_connected_device_udids(idevice_id_path: Path | None = None) -> list[str]
         logger.error(
             f"Failed to detect USB devices. Exit code: {completed_process.returncode}"
         )
-        _log_command_output(completed_process, is_error=True)
+        log_command_output(completed_process, is_error=True)
         return []
 
     device_udids = []
@@ -93,7 +93,7 @@ def get_device_info(
         return None
 
     command = [str(tool_path), "--udid", udid, "--xml"]
-    completed_process = _run_command(command)
+    completed_process = run_command(command)
     if completed_process is None:
         return None
 
@@ -102,7 +102,7 @@ def get_device_info(
             f"Failed to read device information. Exit code: "
             f"{completed_process.returncode}"
         )
-        _log_command_output(completed_process, is_error=True)
+        log_command_output(completed_process, is_error=True)
         return None
 
     try:

@@ -22,7 +22,7 @@ def test_run_command_uses_expected_subprocess_options(monkeypatch):
 
     monkeypatch.setattr(command_runner.subprocess, "run", fake_run)
 
-    completed_process = command_runner._run_command(["tool", "--version"])
+    completed_process = command_runner.run_command(["tool", "--version"])
 
     assert completed_process is expected_process
     assert captured_arguments == {
@@ -47,7 +47,7 @@ def test_run_command_logs_operating_system_error(monkeypatch):
     monkeypatch.setattr(command_runner.subprocess, "run", raise_os_error)
     monkeypatch.setattr(command_runner, "logger", fake_logger)
 
-    completed_process = command_runner._run_command(["missing-tool"])
+    completed_process = command_runner.run_command(["missing-tool"])
 
     assert completed_process is None
     assert fake_logger.errors == [
@@ -67,7 +67,7 @@ def test_log_command_output_uses_error_level(monkeypatch):
     )
     monkeypatch.setattr(command_runner, "logger", fake_logger)
 
-    command_runner._log_command_output(completed_process, is_error=True)
+    command_runner.log_command_output(completed_process, is_error=True)
 
     assert fake_logger.errors == ["stdout: output", "stderr: failure"]
     assert fake_logger.debugs == []
@@ -84,7 +84,7 @@ def test_log_command_output_uses_debug_level_and_ignores_empty_output(monkeypatc
     )
     monkeypatch.setattr(command_runner, "logger", fake_logger)
 
-    command_runner._log_command_output(completed_process, is_error=False)
+    command_runner.log_command_output(completed_process, is_error=False)
 
     assert fake_logger.errors == []
     assert fake_logger.debugs == ["stdout: installed"]

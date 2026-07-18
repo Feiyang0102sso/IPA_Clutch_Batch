@@ -6,10 +6,10 @@ from pathlib import Path
 import subprocess
 
 from ipa_clutch_batch.common.command_runner import (
-    _log_command_output,
-    _run_command,
+    log_command_output,
+    run_command,
 )
-from ipa_clutch_batch.common.ipa_utils import _ipa_sort_key
+from ipa_clutch_batch.common.ipa_utils import ipa_sort_key
 from ipa_clutch_batch.config import get_ideviceinstaller_path
 from ipa_clutch_batch.device_connector import (
     DeviceInfo,
@@ -81,12 +81,12 @@ def install_ipa(
         "install",
         str(resolved_ipa_path),
     ]
-    completed_process = _run_command(command)
+    completed_process = run_command(command)
     if completed_process is None:
         return None
 
     success = completed_process.returncode == 0
-    _log_command_output(completed_process, is_error=not success)
+    log_command_output(completed_process, is_error=not success)
 
     if success:
         logger.info(f"IPA installed successfully: {resolved_ipa_path.name}")
@@ -109,7 +109,7 @@ def install_ipa(
 
 def install_all_ipas(input_dir: Path, device_info: DeviceInfo) -> BatchInstallSummary:
     """Install all IPA files in alphabetical filename order."""
-    ipa_paths = sorted(input_dir.glob("*.ipa"), key=_ipa_sort_key)
+    ipa_paths = sorted(input_dir.glob("*.ipa"), key=ipa_sort_key)
     total_count = len(ipa_paths)
 
     if total_count == 0:

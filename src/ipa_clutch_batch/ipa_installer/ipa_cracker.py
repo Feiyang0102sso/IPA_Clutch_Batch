@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 import re
 
-from ipa_clutch_batch.common.ipa_utils import _ipa_sort_key
+from ipa_clutch_batch.common.ipa_utils import ipa_sort_key
 from ipa_clutch_batch.config import CLUTCH_DUMP_DIR
 from ipa_clutch_batch.device_connector import DeviceInfo, UsbSshConnection
 from ipa_clutch_batch.ipa_info import get_single_ipa_info
@@ -55,7 +55,7 @@ def install_and_crack_all_ipas(
     ssh_connection: UsbSshConnection,
 ) -> InstallAndCrackSummary:
     """Install and crack IPA files one at a time in alphabetical order."""
-    ipa_paths = sorted(input_dir.glob("*.ipa"), key=_ipa_sort_key)
+    ipa_paths = sorted(input_dir.glob("*.ipa"), key=ipa_sort_key)
     total_count = len(ipa_paths)
 
     if total_count == 0:

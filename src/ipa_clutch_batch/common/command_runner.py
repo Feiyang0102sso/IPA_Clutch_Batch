@@ -5,7 +5,7 @@ import subprocess
 from ipa_clutch_batch.logger import logger
 
 
-def _run_command(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+def run_command(command: list[str]) -> subprocess.CompletedProcess[str] | None:
     """Run one system command and log operating-system errors."""
     try:
         return subprocess.run(
@@ -22,7 +22,7 @@ def _run_command(command: list[str]) -> subprocess.CompletedProcess[str] | None:
         return None
 
 
-def _log_command_output(
+def log_command_output(
     completed_process: subprocess.CompletedProcess[str],
     is_error: bool,
 ):
