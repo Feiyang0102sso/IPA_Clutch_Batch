@@ -21,22 +21,22 @@ def test_ssh22_opens_tunnel_only_and_closes_on_ctrl_c(monkeypatch):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(
-        ssh_tunnel_workflow,
+        ssh_tunnel_alt,
         "get_single_connected_device_udid",
         get_mock_device_udid,
     )
     monkeypatch.setattr(
-        ssh_tunnel_workflow,
+        ssh_tunnel_alt,
         "UsbSshConnection",
         create_fake_connection,
     )
     monkeypatch.setattr(
-        ssh_tunnel_workflow.time,
+        ssh_tunnel_alt.time,
         "sleep",
         interrupt_monitoring,
     )
 
-    exit_code = ssh_tunnel_workflow.run_ssh22_tunnel()
+    exit_code = ssh_tunnel_alt.run_ssh22_tunnel()
 
     assert exit_code == 0
     assert captured_connection_arguments == {
