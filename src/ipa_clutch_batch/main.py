@@ -5,15 +5,12 @@ import argparse
 from pathlib import Path
 
 from ipa_clutch_batch.config import get_cracked_dir, get_input_dir, init_app_env
-from ipa_clutch_batch.device_connector import (
+from ipa_clutch_batch.device import (
     UsbSshConnection,
     get_device_info,
     get_single_connected_device_udid,
 )
-from ipa_clutch_batch.ipa_installer import (
-    install_and_crack_all_ipas,
-    move_and_rename_dumped_ipas,
-)
+from ipa_clutch_batch.ipa_processing import run_ipa_pipeline
 from ipa_clutch_batch.logger import logger
 from ipa_clutch_batch.version import __app_name__, __version__
 
@@ -60,23 +57,18 @@ def main() -> int:
         if not ssh_connection.connect():
             return 1
 
-        process_summary = install_and_crack_all_ipas(
+        process_summary = run_ipa_pipeline(
             input_dir,
+            cracked_dir,
             device_info,
             ssh_connection,
         )
 
-        move_summary = move_and_rename_dumped_ipas(
-            cracked_dir,
-            ssh_connection,
-            process_summary.remote_ipa_paths,
-        )
-
-        total_failed = process_summary.failed + move_summary.failed
+        total_failed = process_summary.failed
         logger.info(
             f"Workflow completed: {process_summary.total} input, "
-            f"{process_summary.cracked} cracked, {move_summary.moved} moved, "
-            f"{total_failed} failed."
+            f"{process_summary.cracked} cracked, {process_summary.moved} moved, "
+            f"{total_failed} failed, {process_summary.skipped} skipped."
         )
         if total_failed > 0:
             return 1
@@ -116,6 +108,10 @@ def _contains_ipa_files(input_dir: Path) -> bool:
             return True
     return False
 
-
+# !!! for test only !!!
+# ipa-clutch-batch input
+# ipa-clutch-batch kill9
+# ipa-clutch-batch already_crack
 if __name__ == "__main__":
     raise SystemExit(main())
+

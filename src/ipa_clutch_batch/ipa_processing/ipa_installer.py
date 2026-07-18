@@ -11,7 +11,7 @@ from ipa_clutch_batch.common.command_runner import (
 )
 from ipa_clutch_batch.common.ipa_utils import ipa_sort_key
 from ipa_clutch_batch.config import get_ideviceinstaller_path
-from ipa_clutch_batch.device_connector import (
+from ipa_clutch_batch.device import (
     DeviceInfo,
     get_single_connected_device_udid,
 )
@@ -30,6 +30,7 @@ class InstallResult:
     stdout: str
     stderr: str
     failure_reason: str | None
+    device_storage_full: bool
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,13 @@ def install_ipa(
         return None
 
     success = completed_process.returncode == 0
+    device_storage_full = False
+    if not success:
+        device_storage_full = is_device_storage_full_error(
+            completed_process.stdout,
+            completed_process.stderr,
+        )
+
     log_command_output(completed_process, is_error=not success)
 
     if success:
@@ -103,7 +111,11 @@ def install_ipa(
         return_code=completed_process.returncode,
         stdout=completed_process.stdout,
         stderr=completed_process.stderr,
-        failure_reason=_classify_install_failure(completed_process),
+        failure_reason=_classify_install_failure(
+            completed_process,
+            device_storage_full,
+        ),
+        device_storage_full=device_storage_full,
     )
 
 
@@ -229,10 +241,13 @@ def _parse_version(version: str) -> list[int]:
 
 def _classify_install_failure(
     completed_process: subprocess.CompletedProcess[str],
+    device_storage_full: bool,
 ) -> str | None:
     """Classify common installation errors without hiding raw tool output."""
     combined_output = f"{completed_process.stdout}\n{completed_process.stderr}".lower()
 
+    if device_storage_full:
+        return "The device does not have enough free storage."
     if "deviceosversiontoolow" in combined_output or "minimumosversion" in combined_output:
         return "The connected iOS version is below the app minimum requirement."
     if "incorrectarchitecture" in combined_output or "architecture" in combined_output:
@@ -243,6 +258,19 @@ def _classify_install_failure(
         return "iOS rejected application verification or signing."
     if "installprohibited" in combined_output:
         return "Application installation is prohibited by the device."
-    if "not enough" in combined_output and "space" in combined_output:
-        return "The device does not have enough free storage."
     return None
+
+
+def is_device_storage_full_error(stdout: str, stderr: str) -> bool:
+    """Return whether command output reports insufficient device storage."""
+    combined_output = f"{stdout}\n{stderr}".lower()
+
+    if "no space left on device" in combined_output:
+        return True
+    if "not enough" in combined_output and "space" in combined_output:
+        return True
+    if "insufficient storage" in combined_output:
+        return True
+    if "disk full" in combined_output:
+        return True
+    return False

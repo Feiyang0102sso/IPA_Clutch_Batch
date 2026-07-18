@@ -15,17 +15,17 @@
 > Only process IPA files that you legally own and are allowed to inspect.
 > You are responsible for complying with local laws, software licenses, and platform rules.
 
-IPA Clutch Batch is a Windows-focused batch cracking assistant for jailbroken iOS devices. It lets you run the whole IPA cracking workflow from your computer: batch install IPA files, batch run Clutch, then pull all dumped IPA files back and rename them automatically. No more staring at a console and manually installing, reinstalling, and typing commands for every single app. Faster, cleaner, and a little less painful. **🤓👍**
+IPA Clutch Batch is a Windows-focused batch cracking assistant for jailbroken iOS devices. It lets you run the whole IPA cracking workflow from your computer: install one IPA, run Clutch, pull the dumped IPA back, rename it, clean up the remote dump, then continue with the next file. No more staring at a console and manually installing, reinstalling, and typing commands for every single app. Faster, cleaner, and a little less painful. **🤓👍**
 
 ### What It Does
 
 The batch workflow is intentionally simple:
 
-1. Install IPA files one by one.
-2. Run Clutch on each installed app one by one.
-3. Wait until all apps have been processed.
-4. Export all dumped IPA files back to the computer.
-5. Batch rename the exported IPA files using their metadata.
+1. Install one IPA file.
+2. Run Clutch on the installed app.
+3. Download and rename the dumped IPA on the computer.
+4. Verify the local file and remove its remote dump.
+5. Continue with the next IPA file.
 
 ### Environment
 
@@ -86,17 +86,17 @@ I do not currently know whether there is a matching English tutorial on YouTube.
 > 请只处理你合法拥有且被允许检查的 IPA 文件。
 > 你需要自行遵守当地法律、软件许可协议和平台规则。
 
-IPA Clutch Batch 是一个面向 Windows 的电脑端批量砸壳助手，用于配合已越狱的 iOS 设备批量处理 IPA 文件。它可以在电脑上一口气完成批量安装、批量调用 Clutch 砸壳、统一拉回导出的 IPA 文件，并自动批量重命名。不用再像以前一样一直盯着控制台，一个个安装、重新安装、手动输入命令。更快，更省事，也更少折磨。**🤓👍**
+IPA Clutch Batch 是一个面向 Windows 的电脑端批量砸壳助手，用于配合已越狱的 iOS 设备批量处理 IPA 文件。它会依次完成安装一个 IPA、调用 Clutch 砸壳、拉回并重命名导出的 IPA、清理设备端 dump，然后再处理下一个文件。不用再像以前一样一直盯着控制台，一个个安装、重新安装、手动输入命令。更快，更省事，也更少折磨。**🤓👍**
 
 ### 项目做什么
 
 批量流程刻意保持简单：
 
-1. 一个个安装 IPA 文件。
-2. 一个个对已安装的 App 执行 Clutch 砸壳。
-3. 等待全部 App 处理完成。
-4. 将所有砸壳后的 IPA 文件统一导出到电脑。
-5. 根据 IPA 元数据批量重命名导出的文件。
+1. 安装一个 IPA 文件。
+2. 对已安装的 App 执行 Clutch 砸壳。
+3. 将 dump 下载到电脑并根据元数据重命名。
+4. 验证本地文件并删除对应的设备端 dump。
+5. 继续处理下一个 IPA 文件。
 
 ### 运行环境
 

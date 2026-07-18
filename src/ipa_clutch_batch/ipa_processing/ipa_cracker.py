@@ -1,17 +1,12 @@
-"""
-Install each IPA and dump it with Clutch before processing the next IPA.
-"""
+"""Dump one installed iOS application with Clutch."""
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 import re
 
-from ipa_clutch_batch.common.ipa_utils import ipa_sort_key
 from ipa_clutch_batch.config import CLUTCH_DUMP_DIR
-from ipa_clutch_batch.device_connector import DeviceInfo, UsbSshConnection
-from ipa_clutch_batch.ipa_info import get_single_ipa_info
-from ipa_clutch_batch.ipa_installer.ipa_installer import (
-    get_ipa_compatibility_error,
-    install_ipa,
+from ipa_clutch_batch.device import UsbSshConnection
+from ipa_clutch_batch.ipa_processing.ipa_installer import (
+    is_device_storage_full_error,
 )
 from ipa_clutch_batch.logger import logger
 
@@ -31,96 +26,7 @@ class CrackResult:
     exit_code: int | None
     failure_reason: str | None
     remote_ipa_path: str | None
-
-
-@dataclass(frozen=True)
-class InstallAndCrackSummary:
-    """Summary of one sequential install-and-crack batch."""
-
-    total: int
-    cracked: int
-    install_failed: int
-    crack_failed: int
-    remote_ipa_paths: tuple[str, ...]
-
-    @property
-    def failed(self) -> int:
-        """Return the total number of failed IPA files."""
-        return self.install_failed + self.crack_failed
-
-
-def install_and_crack_all_ipas(
-    input_dir: Path,
-    device_info: DeviceInfo,
-    ssh_connection: UsbSshConnection,
-) -> InstallAndCrackSummary:
-    """Install and crack IPA files one at a time in alphabetical order."""
-    ipa_paths = sorted(input_dir.glob("*.ipa"), key=ipa_sort_key)
-    total_count = len(ipa_paths)
-
-    if total_count == 0:
-        logger.info("No IPA files found in input directory.")
-        return InstallAndCrackSummary(
-            total=0,
-            cracked=0,
-            install_failed=0,
-            crack_failed=0,
-            remote_ipa_paths=(),
-        )
-
-    logger.info(f"Found {total_count} IPA file(s) to install and crack.")
-    cracked_count = 0
-    install_failed_count = 0
-    crack_failed_count = 0
-    remote_ipa_paths = []
-
-    for process_index, ipa_path in enumerate(ipa_paths, start=1):
-        logger.info(f"Process [{process_index}/{total_count}]: {ipa_path.name}")
-
-        ipa_info = get_single_ipa_info(ipa_path)
-        if ipa_info is None:
-            install_failed_count += 1
-            continue
-
-        logger.info(f"Target bundle ID: {ipa_info.bundle_identifier}")
-        compatibility_error = get_ipa_compatibility_error(ipa_info, device_info)
-        if compatibility_error is not None:
-            install_failed_count += 1
-            logger.error(f"Compatibility check failed: {compatibility_error}")
-            continue
-
-        install_result = install_ipa(ipa_path, udid=device_info.udid)
-        if install_result is None or not install_result.success:
-            install_failed_count += 1
-            if install_result is not None and install_result.failure_reason is not None:
-                logger.error(f"Failure reason: {install_result.failure_reason}")
-            continue
-
-        crack_result = crack_installed_app(
-            ipa_info.bundle_identifier,
-            ssh_connection,
-        )
-        if crack_result.success:
-            cracked_count += 1
-            if crack_result.remote_ipa_path is not None:
-                remote_ipa_paths.append(crack_result.remote_ipa_path)
-            continue
-
-        crack_failed_count += 1
-
-    summary = InstallAndCrackSummary(
-        total=total_count,
-        cracked=cracked_count,
-        install_failed=install_failed_count,
-        crack_failed=crack_failed_count,
-        remote_ipa_paths=tuple(remote_ipa_paths),
-    )
-    logger.info(
-        f"Install and crack completed: {summary.total} total, "
-        f"{summary.cracked} cracked, {summary.install_failed} install failed, "
-        f"{summary.crack_failed} crack failed."
-    )
-    return summary
+    device_storage_full: bool
 
 
 def crack_installed_app(
@@ -169,6 +75,24 @@ def crack_installed_app(
             "Cannot start the Clutch dump command.",
         )
 
+    device_storage_full = is_device_storage_full_error(
+        dump_result.stdout,
+        dump_result.stderr,
+    )
+    if device_storage_full:
+        failure_reason = classify_clutch_failure(
+            dump_result.exit_code,
+            dump_result.stdout,
+            dump_result.stderr,
+        )
+        return _log_crack_failure(
+            bundle_identifier,
+            app_number,
+            dump_result.exit_code,
+            failure_reason,
+            device_storage_full=True,
+        )
+
     if dump_result.exit_code != 0:
         failure_reason = classify_clutch_failure(
             dump_result.exit_code,
@@ -207,6 +131,7 @@ def crack_installed_app(
         exit_code=dump_result.exit_code,
         failure_reason=None,
         remote_ipa_path=remote_ipa_path,
+        device_storage_full=False,
     )
 
 
@@ -234,6 +159,8 @@ def classify_clutch_failure(
     """Classify known Clutch failures while preserving its raw output in logs."""
     combined_output = f"{stdout}\n{stderr}".lower()
 
+    if is_device_storage_full_error(stdout, stderr):
+        return "The device does not have enough free storage."
     if exit_code in (9, 137) or "killed: 9" in combined_output:
         return (
             "Clutch was terminated by SIGKILL (9). Check App Store account "
@@ -258,6 +185,7 @@ def _log_crack_failure(
     app_number: int | None,
     exit_code: int | None,
     failure_reason: str,
+    device_storage_full: bool = False,
 ) -> CrackResult:
     """Log and return one failed crack result."""
     logger.error(f"Clutch dump failed for {bundle_identifier}: {failure_reason}")
@@ -268,6 +196,7 @@ def _log_crack_failure(
         exit_code=exit_code,
         failure_reason=failure_reason,
         remote_ipa_path=None,
+        device_storage_full=device_storage_full,
     )
 
 
