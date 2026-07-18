@@ -20,12 +20,17 @@ def test_batch_checks_clutch_after_ssh_before_ipa_pipeline(
         input_path=tmp_path,
         clutch=False,
         ssh22=False,
+        verbose=False,
     )
     workflow_events = []
     fake_connection = FakeBatchSshConnection(workflow_events)
+    fake_progress_display = FakeProgressDisplay(workflow_events)
 
     def parse_batch_arguments():
         return arguments
+
+    def configure_batch_console_logs(verbose: bool):
+        workflow_events.append(f"logging:{verbose}")
 
     def initialize_environment(input_dir=None):
         assert input_dir == tmp_path
@@ -51,35 +56,67 @@ def test_batch_checks_clutch_after_ssh_before_ipa_pipeline(
         cracked_dir,
         device_info,
         ssh_connection,
+        progress_reporter=None,
     ):
         assert input_dir == tmp_path
         assert cracked_dir == tmp_path / "cracked"
         assert device_info is not None
         assert ssh_connection is fake_connection
+        assert progress_reporter is fake_progress_display
         workflow_events.append("pipeline")
         return FakeProcessSummary()
 
     monkeypatch.setattr(main, "_parse_arguments", parse_batch_arguments)
+    monkeypatch.setattr(
+        main,
+        "configure_console_logging",
+        configure_batch_console_logs,
+    )
     monkeypatch.setattr(main, "init_app_env", initialize_environment)
     monkeypatch.setattr(main, "get_single_connected_device_udid", get_mock_device_udid)
     monkeypatch.setattr(main, "get_device_info", get_mock_device_info)
     monkeypatch.setattr(main, "UsbSshConnection", create_fake_connection)
+    monkeypatch.setattr(
+        main,
+        "WorkflowProgress",
+        lambda enabled: fake_progress_display,
+    )
     monkeypatch.setattr(main, "ensure_clutch_ready", check_mock_clutch)
     monkeypatch.setattr(main, "run_ipa_pipeline", run_mock_ipa_pipeline)
 
     exit_code = main.main()
 
     assert exit_code == 0
-    assert workflow_events == ["connect", "clutch", "pipeline", "close"]
+    assert workflow_events == [
+        "logging:False",
+        "progress:ssh_started",
+        "connect",
+        "progress:ssh_completed",
+        "progress:clutch_started",
+        "clutch",
+        "progress:clutch_completed",
+        "pipeline",
+        "progress:finished",
+        "close",
+        "progress:closed",
+    ]
 
 
 def test_clutch_mode_remains_available(monkeypatch):
     """Keep --clutch as a dedicated check-and-repair workflow."""
-    arguments = argparse.Namespace(input_path=None, clutch=True, ssh22=False)
+    arguments = argparse.Namespace(
+        input_path=None,
+        clutch=True,
+        ssh22=False,
+        verbose=False,
+    )
     recorded_calls = []
 
     def parse_clutch_arguments():
         return arguments
+
+    def configure_complete_console_logs(verbose: bool):
+        recorded_calls.append(f"logging:{verbose}")
 
     def initialize_environment():
         recorded_calls.append("init")
@@ -89,22 +126,35 @@ def test_clutch_mode_remains_available(monkeypatch):
         return 0
 
     monkeypatch.setattr(main, "_parse_arguments", parse_clutch_arguments)
+    monkeypatch.setattr(
+        main,
+        "configure_console_logging",
+        configure_complete_console_logs,
+    )
     monkeypatch.setattr(main, "init_app_env", initialize_environment)
     monkeypatch.setattr(main, "run_clutch_check", run_mock_clutch_check)
 
     exit_code = main.main()
 
     assert exit_code == 0
-    assert recorded_calls == ["init", "clutch"]
+    assert recorded_calls == ["logging:True", "init", "clutch"]
 
 
 def test_ssh22_mode_runs_without_an_input_directory(monkeypatch):
     """Select only the standalone port 22 tunnel workflow."""
-    arguments = argparse.Namespace(input_path=None, clutch=False, ssh22=True)
+    arguments = argparse.Namespace(
+        input_path=None,
+        clutch=False,
+        ssh22=True,
+        verbose=False,
+    )
     recorded_calls = []
 
     def parse_ssh22_arguments():
         return arguments
+
+    def configure_complete_console_logs(verbose: bool):
+        recorded_calls.append(f"logging:{verbose}")
 
     def initialize_environment():
         recorded_calls.append("init")
@@ -114,19 +164,25 @@ def test_ssh22_mode_runs_without_an_input_directory(monkeypatch):
         return 0
 
     monkeypatch.setattr(main, "_parse_arguments", parse_ssh22_arguments)
+    monkeypatch.setattr(
+        main,
+        "configure_console_logging",
+        configure_complete_console_logs,
+    )
     monkeypatch.setattr(main, "init_app_env", initialize_environment)
     monkeypatch.setattr(main, "run_ssh22_tunnel", run_mock_ssh22_tunnel)
 
     exit_code = main.main()
 
     assert exit_code == 0
-    assert recorded_calls == ["init", "ssh22"]
+    assert recorded_calls == ["logging:True", "init", "ssh22"]
 
 
 @pytest.mark.parametrize(
     "command_arguments",
     [
         ["ipa-clutch-batch", "--ssh22", "--clutch"],
+        ["ipa-clutch-batch", "--ssh22", "--verbose"],
         ["ipa-clutch-batch", "--ssh22", "input"],
     ],
 )
@@ -141,6 +197,20 @@ def test_ssh22_rejects_other_workflow_arguments(
         main._parse_arguments()
 
     assert system_exit.value.code == 2
+
+
+def test_verbose_argument_enables_complete_console_logs(monkeypatch, tmp_path):
+    """Accept verbose mode together with the normal batch input path."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["ipa-clutch-batch", "--verbose", str(tmp_path)],
+    )
+
+    arguments = main._parse_arguments()
+
+    assert arguments.verbose
+    assert arguments.input_path == tmp_path
 
 
 @dataclass(frozen=True)
@@ -175,3 +245,37 @@ class FakeBatchSshConnection:
     def close(self):
         """Record SSH cleanup."""
         self.workflow_events.append("close")
+
+
+class FakeProgressDisplay:
+    """Record main workflow progress events without terminal output."""
+
+    def __init__(self, workflow_events: list[str]):
+        self.workflow_events = workflow_events
+
+    def open(self):
+        """Provide the progress lifecycle method used by the application."""
+
+    def start_ssh_stage(self):
+        """Record the start of the SSH stage."""
+        self.workflow_events.append("progress:ssh_started")
+
+    def complete_ssh_stage(self):
+        """Record successful SSH completion."""
+        self.workflow_events.append("progress:ssh_completed")
+
+    def start_clutch_stage(self):
+        """Record the start of the Clutch stage."""
+        self.workflow_events.append("progress:clutch_started")
+
+    def complete_clutch_stage(self):
+        """Record successful Clutch completion."""
+        self.workflow_events.append("progress:clutch_completed")
+
+    def show_all_tasks_finished(self):
+        """Record the final message before SSH cleanup."""
+        self.workflow_events.append("progress:finished")
+
+    def close(self):
+        """Record progress cleanup."""
+        self.workflow_events.append("progress:closed")

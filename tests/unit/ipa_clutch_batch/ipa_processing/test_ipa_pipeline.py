@@ -1,18 +1,22 @@
 """Unit tests for the sequential install, crack, and move pipeline."""
 
+from contextlib import contextmanager
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path, PurePosixPath
 
 from ipa_clutch_batch.device import DeviceInfo
 from ipa_clutch_batch.ipa_processing import ipa_mover, ipa_pipeline
 from ipa_clutch_batch.ipa_processing.ipa_cracker import CrackResult
 from ipa_clutch_batch.ipa_processing.ipa_installer import InstallResult
+from ipa_clutch_batch.progress import IpaProcessingStep, WorkflowProgress
 
 
 def test_pipeline_moves_each_dump_before_installing_next(monkeypatch, tmp_path: Path):
     """Complete one IPA lifecycle before starting the next installation."""
     _create_ipa_files(tmp_path, 2)
     pipeline_events = []
+    progress_reporter = FakeProgressReporter()
     ssh_connection = FakePipelineSshConnection(pipeline_events)
 
     def fake_install(ipa_path: Path, udid: str):
@@ -36,6 +40,7 @@ def test_pipeline_moves_each_dump_before_installing_next(monkeypatch, tmp_path: 
         tmp_path / "cracked",
         _create_device_info(),
         ssh_connection,
+        progress_reporter=progress_reporter,
     )
 
     assert pipeline_events == [
@@ -54,6 +59,21 @@ def test_pipeline_moves_each_dump_before_installing_next(monkeypatch, tmp_path: 
     assert summary.moved == 2
     assert summary.failed == 0
     assert summary.skipped == 0
+    assert progress_reporter.events == [
+        "start:2",
+        "begin:Install:app_1.ipa",
+        "complete:Install:app_1.ipa",
+        "begin:Crack:app_1.ipa",
+        "complete:Crack:app_1.ipa",
+        "begin:Move & Rename:app_1.ipa",
+        "complete:Move & Rename:app_1.ipa",
+        "begin:Install:app_2.ipa",
+        "complete:Install:app_2.ipa",
+        "begin:Crack:app_2.ipa",
+        "complete:Crack:app_2.ipa",
+        "begin:Move & Rename:app_2.ipa",
+        "complete:Move & Rename:app_2.ipa",
+    ]
 
 
 def test_pipeline_stops_when_move_or_remote_cleanup_fails(
@@ -63,6 +83,7 @@ def test_pipeline_stops_when_move_or_remote_cleanup_fails(
     """Do not install another IPA when the current dump was not safely removed."""
     _create_ipa_files(tmp_path, 3)
     pipeline_events = []
+    progress_reporter = FakeProgressReporter()
     ssh_connection = FakePipelineSshConnection(pipeline_events)
 
     def fake_install(ipa_path: Path, udid: str):
@@ -86,6 +107,7 @@ def test_pipeline_stops_when_move_or_remote_cleanup_fails(
         tmp_path / "cracked",
         _create_device_info(),
         ssh_connection,
+        progress_reporter=progress_reporter,
     )
 
     assert pipeline_events == [
@@ -100,6 +122,15 @@ def test_pipeline_stops_when_move_or_remote_cleanup_fails(
     assert summary.move_failed == 1
     assert summary.failed == 1
     assert summary.skipped == 2
+    assert progress_reporter.events == [
+        "start:3",
+        "begin:Install:app_1.ipa",
+        "complete:Install:app_1.ipa",
+        "begin:Crack:app_1.ipa",
+        "complete:Crack:app_1.ipa",
+        "begin:Move & Rename:app_1.ipa",
+        "complete:Move & Rename:app_1.ipa",
+    ]
 
 
 def test_single_mover_deletes_remote_dump_after_local_verification(
@@ -125,6 +156,66 @@ def test_single_mover_deletes_remote_dump_after_local_verification(
     assert move_succeeded
     assert final_path.is_file()
     assert sftp_client.removed_paths == [remote_ipa_path]
+
+
+def test_compatibility_failure_skips_remaining_steps_and_fills_progress(
+    monkeypatch,
+    tmp_path: Path,
+):
+    """Reach nine of nine for two valid IPAs and one incompatible IPA."""
+    _create_ipa_files(tmp_path, 3)
+    progress_output = StringIO()
+    progress_reporter = WorkflowProgress(stream=progress_output)
+    ssh_connection = FakePipelineSshConnection([])
+
+    def get_compatibility_error(ipa_info, device_info):
+        if ipa_info.bundle_identifier.endswith("app_3"):
+            return "App supports iPad, but connected device is iPhone/iPod."
+        return None
+
+    def install_compatible_ipa(ipa_path: Path, udid: str):
+        if ipa_path.stem == "app_3":
+            raise AssertionError("incompatible IPA must not be installed")
+        return _create_successful_install_result(ipa_path, udid)
+
+    def crack_compatible_ipa(bundle_identifier: str, connection):
+        return _create_successful_crack_result(bundle_identifier)
+
+    def move_compatible_ipa(remote_ipa_path: str, cracked_dir: Path, sftp_client):
+        return True
+
+    monkeypatch.setattr(ipa_pipeline, "get_single_ipa_info", _get_fake_ipa_info)
+    monkeypatch.setattr(
+        ipa_pipeline,
+        "get_ipa_compatibility_error",
+        get_compatibility_error,
+    )
+    monkeypatch.setattr(ipa_pipeline, "install_ipa", install_compatible_ipa)
+    monkeypatch.setattr(
+        ipa_pipeline,
+        "crack_installed_app",
+        crack_compatible_ipa,
+    )
+    monkeypatch.setattr(
+        ipa_pipeline,
+        "move_single_dumped_ipa",
+        move_compatible_ipa,
+    )
+
+    summary = ipa_pipeline.run_ipa_pipeline(
+        tmp_path,
+        tmp_path / "cracked",
+        _create_device_info(),
+        ssh_connection,
+        progress_reporter=progress_reporter,
+    )
+
+    assert summary.install_failed == 1
+    assert summary.moved == 2
+    assert summary.skipped == 0
+    rendered_output = progress_output.getvalue()
+    assert "IPA Processing - Skipped" in rendered_output
+    assert "9/9" in rendered_output
 
 
 def _mock_pipeline_dependencies(
@@ -257,3 +348,32 @@ class FakeTransferSftpClient:
     def remove(self, remote_ipa_path: str):
         """Record the remote dump deletion."""
         self.removed_paths.append(remote_ipa_path)
+
+
+class FakeProgressReporter:
+    """Record progress events without writing to the terminal."""
+
+    def __init__(self):
+        self.events = []
+
+    def start_ipa_processing(self, total_count: int):
+        """Record the IPA total."""
+        self.events.append(f"start:{total_count}")
+
+    @contextmanager
+    def track_ipa(self, ipa_path: Path):
+        """Provide the outer IPA lifecycle context."""
+        yield
+
+    @contextmanager
+    def track_ipa_step(
+        self,
+        ipa_path: Path,
+        step: IpaProcessingStep,
+    ):
+        """Record one attempted IPA processing step."""
+        self.events.append(f"begin:{step.value}:{ipa_path.name}")
+        try:
+            yield
+        finally:
+            self.events.append(f"complete:{step.value}:{ipa_path.name}")

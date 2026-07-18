@@ -1,11 +1,17 @@
 """
 Universal log config for IPA Clutch Batch.
 """
+from collections.abc import Callable
 import logging
 from pathlib import Path
 import sys
 
 LOGGER_NAME = "ipa_clutch_batch"
+STDOUT_HANDLER_NAME = "console_stdout"
+STDERR_HANDLER_NAME = "console_stderr"
+
+_before_console_output: Callable[[], None] | None = None
+_after_console_output: Callable[[], None] | None = None
 
 
 class ColoredFormatter(logging.Formatter):
@@ -35,6 +41,20 @@ class ColoredFormatter(logging.Formatter):
         return formatter.format(record)
 
 
+class ConsoleStreamHandler(logging.StreamHandler):
+    """Run optional callbacks around each console log record."""
+
+    def emit(self, record):
+        if _before_console_output is not None:
+            _before_console_output()
+
+        try:
+            super().emit(record)
+        finally:
+            if _after_console_output is not None:
+                _after_console_output()
+
+
 def setup_logger() -> logging.Logger:
     """
     Initialize a logger with console handlers for stdout and stderr.
@@ -44,12 +64,14 @@ def setup_logger() -> logging.Logger:
     project_logger.propagate = False
 
     if not project_logger.handlers:
-        stdout_handler = logging.StreamHandler(sys.stdout)
-        stdout_handler.setLevel(logging.DEBUG)
+        stdout_handler = ConsoleStreamHandler(sys.stdout)
+        stdout_handler.set_name(STDOUT_HANDLER_NAME)
+        stdout_handler.setLevel(logging.WARNING)
         stdout_handler.addFilter(lambda record: record.levelno < logging.ERROR)
         stdout_handler.setFormatter(ColoredFormatter())
 
-        stderr_handler = logging.StreamHandler(sys.stderr)
+        stderr_handler = ConsoleStreamHandler(sys.stderr)
+        stderr_handler.set_name(STDERR_HANDLER_NAME)
         stderr_handler.setLevel(logging.ERROR)
         stderr_handler.setFormatter(ColoredFormatter())
 
@@ -60,6 +82,30 @@ def setup_logger() -> logging.Logger:
 
 
 logger: logging.Logger = setup_logger()
+
+
+def configure_console_logging(verbose: bool):
+    """Select warning-only or complete console logging."""
+    stdout_level = logging.WARNING
+    if verbose:
+        stdout_level = logging.DEBUG
+
+    project_logger = logging.getLogger(LOGGER_NAME)
+    for handler in project_logger.handlers:
+        if handler.get_name() == STDOUT_HANDLER_NAME:
+            handler.setLevel(stdout_level)
+
+
+def set_console_output_hooks(
+    before_output: Callable[[], None] | None,
+    after_output: Callable[[], None] | None,
+):
+    """Set optional callbacks around console log output."""
+    global _before_console_output
+    global _after_console_output
+
+    _before_console_output = before_output
+    _after_console_output = after_output
 
 
 def add_file_handler(log_path: Path):

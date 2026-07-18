@@ -13,7 +13,11 @@ from ipa_clutch_batch.device import (
     run_ssh22_tunnel,
 )
 from ipa_clutch_batch.ipa_processing import run_ipa_pipeline
-from ipa_clutch_batch.logger import logger
+from ipa_clutch_batch.logger import (
+    configure_console_logging,
+    logger,
+)
+from ipa_clutch_batch.progress import WorkflowProgress
 from ipa_clutch_batch.version import __app_name__, __version__
 
 
@@ -22,6 +26,12 @@ def main() -> int:
     Initialize the project environment.
     """
     arguments = _parse_arguments()
+    show_complete_console_logs = (
+        arguments.verbose
+        or arguments.clutch
+        or arguments.ssh22
+    )
+    configure_console_logging(show_complete_console_logs)
     if arguments.ssh22:
         init_app_env()
         logger.info(f"{__app_name__} v{__version__}")
@@ -49,33 +59,43 @@ def main() -> int:
         logger.info("No IPA files found in input directory.")
         return 0
 
-    device_udid = get_single_connected_device_udid()
-    if device_udid is None:
-        logger.error("Device connection check failed. Workflow stopped.")
-        return 1
-
-    logger.info(f"Device connection ready: {device_udid}")
-
-    device_info = get_device_info(device_udid)
-    if device_info is None:
-        logger.error("Cannot read device information. Workflow stopped.")
-        return 1
-
-    ssh_connection = UsbSshConnection(device_udid)
+    progress_display = WorkflowProgress(enabled=not arguments.verbose)
+    progress_display.open()
+    ssh_connection = None
     try:
+        progress_display.start_ssh_stage()
+
+        device_udid = get_single_connected_device_udid()
+        if device_udid is None:
+            logger.error("Device connection check failed. Workflow stopped.")
+            return 1
+
+        logger.info(f"Device connection ready: {device_udid}")
+
+        device_info = get_device_info(device_udid)
+        if device_info is None:
+            logger.error("Cannot read device information. Workflow stopped.")
+            return 1
+
+        ssh_connection = UsbSshConnection(device_udid)
         if not ssh_connection.connect():
             return 1
 
+        progress_display.complete_ssh_stage()
+
+        progress_display.start_clutch_stage()
         clutch_result = ensure_clutch_ready(ssh_connection)
         if not clutch_result.success:
             logger.error("Clutch environment check failed. Workflow stopped.")
             return 1
+        progress_display.complete_clutch_stage()
 
         process_summary = run_ipa_pipeline(
             input_dir,
             cracked_dir,
             device_info,
             ssh_connection,
+            progress_reporter=progress_display,
         )
 
         total_failed = process_summary.failed
@@ -84,13 +104,16 @@ def main() -> int:
             f"{process_summary.cracked} cracked, {process_summary.moved} moved, "
             f"{total_failed} failed, {process_summary.skipped} skipped."
         )
+        progress_display.show_all_tasks_finished()
         if total_failed > 0:
             return 1
     except KeyboardInterrupt:
         logger.info("Workflow interrupted by user.")
         return 130
     finally:
-        ssh_connection.close()
+        if ssh_connection is not None:
+            ssh_connection.close()
+        progress_display.close()
 
     return 0
 
@@ -114,20 +137,36 @@ def _parse_arguments() -> argparse.Namespace:
         help="Directory containing IPA files to install and crack.",
     )
     argument_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help=(
+            "Show complete console logs instead of progress bars during "
+            "normal batch processing."
+        ),
+    )
+    argument_parser.add_argument(
         "--clutch",
         action="store_true",
-        help="Check and repair Clutch on the connected device, then exit.",
+        help="Only check the Clutch environment; do nothing else.",
     )
     argument_parser.add_argument(
         "--ssh22",
         action="store_true",
-        help="Open local port 22 to device SSH until Ctrl+C, then exit.",
+        help=(
+            "Open local port 22 for testing. It cannot be combined with any "
+            "other argument; press Ctrl+C to close the connection."
+        ),
     )
     arguments = argument_parser.parse_args()
-    if arguments.ssh22 and arguments.clutch:
-        argument_parser.error("--ssh22 cannot be combined with --clutch")
-    if arguments.ssh22 and arguments.input_path is not None:
-        argument_parser.error("--ssh22 cannot accept an input path")
+    ssh22_has_other_arguments = (
+        arguments.clutch
+        or arguments.verbose
+        or arguments.input_path is not None
+    )
+    if arguments.ssh22 and ssh22_has_other_arguments:
+        argument_parser.error(
+            "--ssh22 cannot be combined with any other argument"
+        )
     if arguments.input_path is None and not arguments.clutch and not arguments.ssh22:
         argument_parser.error(
             "input_path is required unless --clutch or --ssh22 is used"

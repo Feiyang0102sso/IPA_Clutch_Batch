@@ -106,7 +106,7 @@ def test_log_ssh_output_cleans_output_and_logs_failure(monkeypatch):
     assert stdout_text == "output"
     assert stderr_text == "failure"
     assert exit_code == 7
-    assert fake_logger.infos == ["SSH stdout: output"]
+    assert fake_logger.debugs == ["SSH stdout: output"]
     assert fake_logger.errors == [
         "SSH stderr: failure",
         "SSH command exit code: 7",

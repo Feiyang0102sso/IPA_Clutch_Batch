@@ -13,6 +13,11 @@ from ipa_clutch_batch.ipa_processing.ipa_installer import (
 )
 from ipa_clutch_batch.ipa_processing.ipa_mover import move_single_dumped_ipa
 from ipa_clutch_batch.logger import logger
+from ipa_clutch_batch.progress import (
+    BatchProgressReporter,
+    IpaProcessingStep,
+    NO_BATCH_PROGRESS,
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +43,7 @@ def run_ipa_pipeline(
     cracked_dir: Path,
     device_info: DeviceInfo,
     ssh_connection: UsbSshConnection,
+    progress_reporter: BatchProgressReporter = NO_BATCH_PROGRESS,
 ) -> BatchProcessSummary:
     """Complete one IPA lifecycle before processing the next IPA."""
     ipa_paths = sorted(input_dir.glob("*.ipa"), key=ipa_sort_key)
@@ -56,6 +62,7 @@ def run_ipa_pipeline(
         )
 
     logger.info(f"Found {total_count} IPA file(s) to process.")
+    progress_reporter.start_ipa_processing(total_count)
     cracked_count = 0
     moved_count = 0
     install_failed_count = 0
@@ -66,91 +73,112 @@ def run_ipa_pipeline(
 
     try:
         for process_index, ipa_path in enumerate(ipa_paths, start=1):
-            logger.info(f"Process [{process_index}/{total_count}]: {ipa_path.name}")
+            with progress_reporter.track_ipa(ipa_path):
+                with progress_reporter.track_ipa_step(
+                    ipa_path,
+                    IpaProcessingStep.INSTALL,
+                ):
+                    logger.info(
+                        f"Process [{process_index}/{total_count}]: {ipa_path.name}"
+                    )
 
-            ipa_info = get_single_ipa_info(ipa_path)
-            if ipa_info is None:
-                install_failed_count += 1
-                continue
+                    ipa_info = get_single_ipa_info(ipa_path)
+                    if ipa_info is None:
+                        install_failed_count += 1
+                        continue
 
-            logger.info(f"Target bundle ID: {ipa_info.bundle_identifier}")
-            compatibility_error = get_ipa_compatibility_error(
-                ipa_info,
-                device_info,
-            )
-            if compatibility_error is not None:
-                install_failed_count += 1
-                logger.error(f"Compatibility check failed: {compatibility_error}")
-                continue
+                    logger.info(f"Target bundle ID: {ipa_info.bundle_identifier}")
+                    compatibility_error = get_ipa_compatibility_error(
+                        ipa_info,
+                        device_info,
+                    )
+                    if compatibility_error is not None:
+                        install_failed_count += 1
+                        logger.error(
+                            f"Compatibility check failed: {compatibility_error}"
+                        )
+                        continue
 
-            install_result = install_ipa(ipa_path, udid=device_info.udid)
-            if install_result is None:
-                install_failed_count += 1
-                continue
+                    install_result = install_ipa(ipa_path, udid=device_info.udid)
+                    if install_result is None:
+                        install_failed_count += 1
+                        continue
 
-            if not install_result.success:
-                install_failed_count += 1
-                if install_result.failure_reason is not None:
-                    logger.error(f"Failure reason: {install_result.failure_reason}")
+                    if not install_result.success:
+                        install_failed_count += 1
+                        if install_result.failure_reason is not None:
+                            logger.error(
+                                f"Failure reason: {install_result.failure_reason}"
+                            )
 
-                if install_result.device_storage_full:
-                    skipped_count = total_count - process_index
-                    _log_device_storage_full_warning(skipped_count)
-                    break
-                continue
+                        if install_result.device_storage_full:
+                            skipped_count = total_count - process_index
+                            _log_device_storage_full_warning(skipped_count)
+                            break
+                        continue
 
-            crack_result = crack_installed_app(
-                ipa_info.bundle_identifier,
-                ssh_connection,
-            )
-            if not crack_result.success:
-                crack_failed_count += 1
-                if crack_result.device_storage_full:
-                    skipped_count = total_count - process_index
-                    _log_device_storage_full_warning(skipped_count)
-                    break
-                continue
+                with progress_reporter.track_ipa_step(
+                    ipa_path,
+                    IpaProcessingStep.CRACK,
+                ):
+                    crack_result = crack_installed_app(
+                        ipa_info.bundle_identifier,
+                        ssh_connection,
+                    )
+                    if not crack_result.success:
+                        crack_failed_count += 1
+                        if crack_result.device_storage_full:
+                            skipped_count = total_count - process_index
+                            _log_device_storage_full_warning(skipped_count)
+                            break
+                        continue
 
-            cracked_count += 1
-            remote_ipa_path = crack_result.remote_ipa_path
-            if remote_ipa_path is None:
-                move_failed_count += 1
-                skipped_count = total_count - process_index
-                logger.error(
-                    "Clutch succeeded without a dump path. Batch processing stopped."
-                )
-                break
-
-            if sftp_client is None:
-                sftp_client = ssh_connection.open_sftp()
-                if sftp_client is None:
+                cracked_count += 1
+                remote_ipa_path = crack_result.remote_ipa_path
+                if remote_ipa_path is None:
                     move_failed_count += 1
                     skipped_count = total_count - process_index
                     logger.error(
-                        "Cannot open SFTP for the dumped IPA. "
+                        "Clutch succeeded without a dump path. "
                         "Batch processing stopped."
                     )
                     break
 
-            logger.info(
-                f"Move [{process_index}/{total_count}]: "
-                f"{PurePosixPath(remote_ipa_path).name}"
-            )
-            move_succeeded = move_single_dumped_ipa(
-                remote_ipa_path,
-                cracked_dir,
-                sftp_client,
-            )
-            if move_succeeded:
-                moved_count += 1
-                continue
+                with progress_reporter.track_ipa_step(
+                    ipa_path,
+                    IpaProcessingStep.MOVE_AND_RENAME,
+                ):
+                    if sftp_client is None:
+                        sftp_client = ssh_connection.open_sftp()
+                        if sftp_client is None:
+                            move_failed_count += 1
+                            skipped_count = total_count - process_index
+                            logger.error(
+                                "Cannot open SFTP for the dumped IPA. "
+                                "Batch processing stopped."
+                            )
+                            break
 
-            move_failed_count += 1
-            skipped_count = total_count - process_index
-            logger.error(
-                "Dump move or remote cleanup failed. Batch processing stopped."
-            )
-            break
+                    logger.info(
+                        f"Move [{process_index}/{total_count}]: "
+                        f"{PurePosixPath(remote_ipa_path).name}"
+                    )
+                    move_succeeded = move_single_dumped_ipa(
+                        remote_ipa_path,
+                        cracked_dir,
+                        sftp_client,
+                    )
+                    if move_succeeded:
+                        moved_count += 1
+                        continue
+
+                    move_failed_count += 1
+                    skipped_count = total_count - process_index
+                    logger.error(
+                        "Dump move or remote cleanup failed. "
+                        "Batch processing stopped."
+                    )
+                    break
     finally:
         if sftp_client is not None:
             sftp_client.close()

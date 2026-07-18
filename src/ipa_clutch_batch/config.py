@@ -69,7 +69,7 @@ def get_resource_root(app_root: Path) -> Path:
 
 ROOT_DIR = get_app_root()
 RESOURCE_ROOT = get_resource_root(ROOT_DIR)
-LOG_FILE_NAME = "ipa_clutch_batch.log"
+LOG_FILE_NAME = "IPAClutchBatch.log"
 LOG_FILE_PATH = ROOT_DIR / LOG_FILE_NAME
 
 INPUT_DIR = ROOT_DIR / "input"
