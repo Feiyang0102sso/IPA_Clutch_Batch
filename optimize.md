@@ -1,19 +1,4 @@
-Viewed ipa_mover.py:1-21
 
-我将读取和检查代码库中的其他核心文件（例如 `main.py`、`ipa_cracker.py`、`device_connector` 等），找出是否存在其他逻辑高度重复、冗余或待优化结构的代码。
-
-首先，查看 `main.py` 的内容：
-
-Viewed main.py:1-122
-
-现在我们来看看 `device_connector` 目录下的内容，并检查可能重复的部分：
-
-Listed directory device_connector
-
-我们查看一下 `device_connector.py` 和 `ssh_connector.py`：
-
-Viewed device_connector.py:1-169
-Viewed ssh_connector.py:1-279
 
 通过对以上代码（包括 `main.py`、`device_connector.py`、`ssh_connector.py` 以及前面的 `ipa_installer.py`、`ipa_cracker.py`、`ipa_mover.py`）的细致检查，我们发现以下几个地方存在**高度重复或逻辑相似的代码**（由于你特别说明了“不要做任何修改”，我只列出检查结果，不做任何代码改动）：
 

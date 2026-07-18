@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 
+from ipa_clutch_batch.common.command_runner import (
+    _log_command_output,
+    _run_command,
+)
+from ipa_clutch_batch.common.ipa_utils import _ipa_sort_key
 from ipa_clutch_batch.config import get_ideviceinstaller_path
 from ipa_clutch_batch.device_connector import (
     DeviceInfo,
@@ -241,44 +246,3 @@ def _classify_install_failure(
     if "not enough" in combined_output and "space" in combined_output:
         return "The device does not have enough free storage."
     return None
-
-
-def _ipa_sort_key(ipa_path: Path) -> str:
-    """Return a stable case-insensitive alphabetical filename key."""
-    return ipa_path.name.casefold()
-
-
-def _run_command(command: list[str]) -> subprocess.CompletedProcess[str] | None:
-    """Run one libimobiledevice command and log operating-system errors."""
-    try:
-        return subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
-    except OSError as error:
-        logger.error(f"Cannot run command: {command[0]}")
-        logger.error(f"Operating system error: {error}")
-        return None
-
-
-def _log_command_output(
-    completed_process: subprocess.CompletedProcess[str],
-    is_error: bool,
-):
-    """Write non-empty command output to the appropriate log level."""
-    output_lines = []
-
-    if completed_process.stdout.strip():
-        output_lines.append(f"stdout: {completed_process.stdout.strip()}")
-    if completed_process.stderr.strip():
-        output_lines.append(f"stderr: {completed_process.stderr.strip()}")
-
-    for output_line in output_lines:
-        if is_error:
-            logger.error(output_line)
-        else:
-            logger.debug(output_line)

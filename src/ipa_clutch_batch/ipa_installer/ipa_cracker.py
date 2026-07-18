@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 import re
 
+from ipa_clutch_batch.common.ipa_utils import _ipa_sort_key
 from ipa_clutch_batch.config import CLUTCH_DUMP_DIR
 from ipa_clutch_batch.device_connector import DeviceInfo, UsbSshConnection
 from ipa_clutch_batch.ipa_info import get_single_ipa_info
@@ -285,8 +286,3 @@ def _is_valid_clutch_output_path(remote_ipa_path: str) -> bool:
     if output_path.parent != dump_dir:
         return False
     return output_path.suffix.lower() == ".ipa"
-
-
-def _ipa_sort_key(ipa_path: Path) -> str:
-    """Return a stable case-insensitive alphabetical filename key."""
-    return ipa_path.name.casefold()

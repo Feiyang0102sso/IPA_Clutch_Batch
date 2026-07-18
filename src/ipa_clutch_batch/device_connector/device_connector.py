@@ -4,8 +4,11 @@ Detect one iOS device connected through USB.
 from dataclasses import dataclass
 from pathlib import Path
 import plistlib
-import subprocess
 
+from ipa_clutch_batch.common.command_runner import (
+    _log_command_output,
+    _run_command,
+)
 from ipa_clutch_batch.config import get_idevice_id_path, get_ideviceinfo_path
 from ipa_clutch_batch.logger import logger
 
@@ -41,7 +44,7 @@ def get_connected_device_udids(idevice_id_path: Path | None = None) -> list[str]
         logger.error(
             f"Failed to detect USB devices. Exit code: {completed_process.returncode}"
         )
-        _log_command_output(completed_process)
+        _log_command_output(completed_process, is_error=True)
         return []
 
     device_udids = []
@@ -99,7 +102,7 @@ def get_device_info(
             f"Failed to read device information. Exit code: "
             f"{completed_process.returncode}"
         )
-        _log_command_output(completed_process)
+        _log_command_output(completed_process, is_error=True)
         return None
 
     try:
@@ -141,28 +144,3 @@ def _get_device_family(product_type: str) -> int | None:
     if product_type.startswith("iPad"):
         return 2
     return None
-
-
-def _run_command(command: list[str]) -> subprocess.CompletedProcess[str] | None:
-    """Run the device detection command and log operating-system errors."""
-    try:
-        return subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
-    except OSError as error:
-        logger.error(f"Cannot run command: {command[0]}")
-        logger.error(f"Operating system error: {error}")
-        return None
-
-
-def _log_command_output(completed_process: subprocess.CompletedProcess[str]):
-    """Write non-empty command output as errors."""
-    if completed_process.stdout.strip():
-        logger.error(f"stdout: {completed_process.stdout.strip()}")
-    if completed_process.stderr.strip():
-        logger.error(f"stderr: {completed_process.stderr.strip()}")
