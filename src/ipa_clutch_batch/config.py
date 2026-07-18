@@ -62,20 +62,9 @@ def get_runtime_mode_message() -> str:
 
 def get_resource_root(app_root: Path) -> Path:
     """
-    Get resources root directory.
+    Return the external resources directory beside the project or packaged EXE.
     """
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        return Path(meipass).resolve()
-
-    if is_packaged_app():
-        if hasattr(__main__, "__file__"):
-            main_file = Path(__main__.__file__).resolve()
-            return main_file.parent
-
-        return app_root
-
-    return app_root
+    return app_root / "resources"
 
 
 ROOT_DIR = get_app_root()
@@ -85,14 +74,17 @@ LOG_FILE_PATH = ROOT_DIR / LOG_FILE_NAME
 
 INPUT_DIR = ROOT_DIR / "input"
 CRACKED_DIR = INPUT_DIR / "cracked"
-LIBIMOBILE_DIR = ROOT_DIR / "libimobile"
+LIBIMOBILE_DIR = RESOURCE_ROOT / "libimobile"
 IDEVICE_ID_PATH = LIBIMOBILE_DIR / "idevice_id.exe"
 IDEVICEINFO_PATH = LIBIMOBILE_DIR / "ideviceinfo.exe"
 IDEVICEINSTALLER_PATH = LIBIMOBILE_DIR / "ideviceinstaller.exe"
 IPROXY_PATH = LIBIMOBILE_DIR / "iproxy.exe"
 
+CLUTCH_DIR = RESOURCE_ROOT / "clutch"
+CLUTCH_BINARY_PATH = CLUTCH_DIR / "Clutch"
+
 SSH_HOST = "127.0.0.1"
-SSH_LOCAL_PORT = 22
+SSH_LOCAL_PORT = 2222
 SSH_DEVICE_PORT = 22
 SSH_USERNAME = "root"
 SSH_PASSWORD = "alpine"
@@ -156,6 +148,13 @@ def get_iproxy_path() -> Path:
     return IPROXY_PATH
 
 
+def get_clutch_binary_path() -> Path:
+    """
+    Return the expected preset Clutch binary path.
+    """
+    return CLUTCH_BINARY_PATH
+
+
 def init_app_env(input_dir: Path | None = None):
     """
     Initial bootstrap with default paths.
@@ -168,6 +167,7 @@ def init_app_env(input_dir: Path | None = None):
     add_file_handler(LOG_FILE_PATH)
     logger.debug(get_runtime_mode_message())
     logger.debug(f"Root Path: {ROOT_DIR}")
+    logger.debug(f"Resource Root Path: {RESOURCE_ROOT}")
     logger.debug(f"Log File Path: {LOG_FILE_PATH}")
     logger.debug(f"Input Path: {runtime_input_dir}")
     logger.debug(f"Cracked Path: {runtime_cracked_dir}")
@@ -176,6 +176,8 @@ def init_app_env(input_dir: Path | None = None):
     logger.debug(f"Device Info Tool Path: {IDEVICEINFO_PATH}")
     logger.debug(f"Installer Tool Path: {IDEVICEINSTALLER_PATH}")
     logger.debug(f"USB Proxy Tool Path: {IPROXY_PATH}")
+    logger.debug(f"Preset Clutch Path: {CLUTCH_BINARY_PATH}")
     logger.debug(
-        f"SSH Tunnel: {SSH_HOST}:{SSH_LOCAL_PORT} -> device:{SSH_DEVICE_PORT}"
+        f"Default SSH Tunnel: {SSH_HOST}:{SSH_LOCAL_PORT} "
+        f"-> device:{SSH_DEVICE_PORT}"
     )

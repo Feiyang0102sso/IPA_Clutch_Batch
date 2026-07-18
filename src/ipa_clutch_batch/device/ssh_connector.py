@@ -53,25 +53,7 @@ class UsbSshConnection:
             logger.error("SSH connection is already open.")
             return False
 
-        proxy_path = self.iproxy_path
-        if proxy_path is None:
-            proxy_path = get_iproxy_path()
-
-        if not proxy_path.is_file():
-            logger.error(f"USB proxy tool not found: {proxy_path}")
-            return False
-
-        if _is_local_port_open(self.local_port):
-            logger.error(
-                f"Local SSH port is already in use: {SSH_HOST}:{self.local_port}"
-            )
-            return False
-
-        if not self._start_iproxy(proxy_path):
-            return False
-
-        if not self._wait_for_tunnel():
-            self.close()
+        if not self.open_tunnel():
             return False
 
         ssh_client = paramiko.SSHClient()
@@ -110,6 +92,34 @@ class UsbSshConnection:
         logger.info("SSH connection established through USB.")
         return True
 
+    def open_tunnel(self) -> bool:
+        """Start the USB TCP tunnel without opening an SSH client session."""
+        if self._iproxy_process is not None:
+            logger.error("USB SSH tunnel is already open.")
+            return False
+
+        proxy_path = self.iproxy_path
+        if proxy_path is None:
+            proxy_path = get_iproxy_path()
+
+        if not proxy_path.is_file():
+            logger.error(f"USB proxy tool not found: {proxy_path}")
+            return False
+
+        if _is_local_port_open(self.local_port):
+            logger.error(
+                f"Local SSH port is already in use: {SSH_HOST}:{self.local_port}"
+            )
+            return False
+
+        if not self._start_iproxy(proxy_path):
+            return False
+
+        if not self._wait_for_tunnel():
+            self.close()
+            return False
+        return True
+
     def execute_command(
         self,
         command: str,
@@ -142,7 +152,7 @@ class UsbSshConnection:
 
     def is_active(self) -> bool:
         """Return whether both the proxy and SSH session are active."""
-        if self._iproxy_process is None or self._iproxy_process.poll() is not None:
+        if not self.is_tunnel_active():
             return False
         if self._ssh_client is None:
             return False
@@ -151,6 +161,12 @@ class UsbSshConnection:
         if transport is None:
             return False
         return transport.is_active()
+
+    def is_tunnel_active(self) -> bool:
+        """Return whether the owned iproxy process is still running."""
+        if self._iproxy_process is None:
+            return False
+        return self._iproxy_process.poll() is None
 
     def open_sftp(self) -> paramiko.SFTPClient | None:
         """Open an SFTP client over the active SSH connection."""

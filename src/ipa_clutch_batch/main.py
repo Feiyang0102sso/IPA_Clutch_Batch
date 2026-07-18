@@ -4,11 +4,13 @@ Command line entry point for IPA Clutch Batch.
 import argparse
 from pathlib import Path
 
+from ipa_clutch_batch.clutch import ensure_clutch_ready, run_clutch_check
 from ipa_clutch_batch.config import get_cracked_dir, get_input_dir, init_app_env
 from ipa_clutch_batch.device import (
     UsbSshConnection,
     get_device_info,
     get_single_connected_device_udid,
+    run_ssh22_tunnel,
 )
 from ipa_clutch_batch.ipa_processing import run_ipa_pipeline
 from ipa_clutch_batch.logger import logger
@@ -20,6 +22,16 @@ def main() -> int:
     Initialize the project environment.
     """
     arguments = _parse_arguments()
+    if arguments.ssh22:
+        init_app_env()
+        logger.info(f"{__app_name__} v{__version__}")
+        return run_ssh22_tunnel()
+
+    if arguments.clutch:
+        init_app_env()
+        logger.info(f"{__app_name__} v{__version__}")
+        return run_clutch_check()
+
     input_dir = get_input_dir(arguments.input_path)
     init_app_env(input_dir)
 
@@ -32,9 +44,6 @@ def main() -> int:
     logger.info(f"{__app_name__} v{__version__}")
     logger.info(f"Input directory: {input_dir}")
     logger.info(f"Cracked directory: {cracked_dir}")
-
-    # get_all_ipa_info_from_directory(input_dir)
-    # logger.info("Batch clutch workflow is not implemented yet.")
 
     if not _contains_ipa_files(input_dir):
         logger.info("No IPA files found in input directory.")
@@ -55,6 +64,11 @@ def main() -> int:
     ssh_connection = UsbSshConnection(device_udid)
     try:
         if not ssh_connection.connect():
+            return 1
+
+        clutch_result = ensure_clutch_ready(ssh_connection)
+        if not clutch_result.success:
+            logger.error("Clutch environment check failed. Workflow stopped.")
             return 1
 
         process_summary = run_ipa_pipeline(
@@ -96,9 +110,29 @@ def _parse_arguments() -> argparse.Namespace:
     argument_parser.add_argument(
         "input_path",
         type=Path,
+        nargs="?",
         help="Directory containing IPA files to install and crack.",
     )
-    return argument_parser.parse_args()
+    argument_parser.add_argument(
+        "--clutch",
+        action="store_true",
+        help="Check and repair Clutch on the connected device, then exit.",
+    )
+    argument_parser.add_argument(
+        "--ssh22",
+        action="store_true",
+        help="Open local port 22 to device SSH until Ctrl+C, then exit.",
+    )
+    arguments = argument_parser.parse_args()
+    if arguments.ssh22 and arguments.clutch:
+        argument_parser.error("--ssh22 cannot be combined with --clutch")
+    if arguments.ssh22 and arguments.input_path is not None:
+        argument_parser.error("--ssh22 cannot accept an input path")
+    if arguments.input_path is None and not arguments.clutch and not arguments.ssh22:
+        argument_parser.error(
+            "input_path is required unless --clutch or --ssh22 is used"
+        )
+    return arguments
 
 
 def _contains_ipa_files(input_dir: Path) -> bool:
@@ -114,4 +148,3 @@ def _contains_ipa_files(input_dir: Path) -> bool:
 # ipa-clutch-batch already_crack
 if __name__ == "__main__":
     raise SystemExit(main())
-

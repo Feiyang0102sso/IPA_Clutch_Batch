@@ -11,6 +11,7 @@ from ipa_clutch_batch.device.ssh_connector import (
     SshCommandResult,
     UsbSshConnection,
 )
+from ipa_clutch_batch.device.ssh_tunnel_alt import run_ssh22_tunnel
 
 __all__ = [
     "DeviceInfo",
@@ -19,4 +20,5 @@ __all__ = [
     "get_single_connected_device_udid",
     "SshCommandResult",
     "UsbSshConnection",
+    "run_ssh22_tunnel",
 ]

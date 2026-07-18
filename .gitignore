@@ -35,4 +35,10 @@ input/
 kill9/
 already_crack/
 tools/
-libimobile/
+
+# resources
+resources/libimobile/*
+!resources/libimobile/.gitkeep
+
+resources/clutch/*
+!resources/clutch/.gitkeep
