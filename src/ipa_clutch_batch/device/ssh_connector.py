@@ -3,13 +3,13 @@ Create and manage an SSH connection to an iOS device through USB.
 """
 from dataclasses import dataclass
 from pathlib import Path
-import re
 import socket
 import subprocess
 import time
 
 import paramiko
 
+from ipa_clutch_batch.common.command_runner import log_ssh_output
 from ipa_clutch_batch.config import (
     SSH_CONNECT_TIMEOUT_SECONDS,
     SSH_DEVICE_PORT,
@@ -20,8 +20,6 @@ from ipa_clutch_batch.config import (
     get_iproxy_path,
 )
 from ipa_clutch_batch.logger import logger
-
-ANSI_COLOR_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @dataclass(frozen=True)
@@ -133,19 +131,7 @@ class UsbSshConnection:
             return None
 
         stdin.close()
-        stdout_text = stdout.read().decode("utf-8", errors="replace")
-        stderr_text = stderr.read().decode("utf-8", errors="replace")
-        stdout_text = _clean_command_output(stdout_text)
-        stderr_text = _clean_command_output(stderr_text)
-        exit_code = stdout.channel.recv_exit_status()
-
-        if stdout_text:
-            logger.info(f"SSH stdout: {stdout_text}")
-        if stderr_text:
-            logger.error(f"SSH stderr: {stderr_text}")
-
-        if exit_code != 0:
-            logger.error(f"SSH command exit code: {exit_code}")
+        stdout_text, stderr_text, exit_code = log_ssh_output(stdout, stderr)
 
         return SshCommandResult(
             command=command,
@@ -269,10 +255,3 @@ def _is_local_port_open(local_port: int) -> bool:
             return True
     except OSError:
         return False
-
-
-def _clean_command_output(command_output: str) -> str:
-    """Remove terminal color codes and normalize command output."""
-    clean_output = ANSI_COLOR_PATTERN.sub("", command_output)
-    clean_output = clean_output.replace("\r", "")
-    return clean_output.strip()

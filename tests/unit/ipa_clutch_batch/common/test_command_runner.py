@@ -90,12 +90,59 @@ def test_log_command_output_uses_debug_level_and_ignores_empty_output(monkeypatc
     assert fake_logger.debugs == ["stdout: installed"]
 
 
+def test_log_ssh_output_cleans_output_and_logs_failure(monkeypatch):
+    """Return normalized SSH output and retain failure diagnostics."""
+    fake_logger = FakeLogger()
+    fake_channel = FakeSshChannel(exit_code=7)
+    stdout = FakeSshStream(b"\x1b[32m output\r\n", fake_channel)
+    stderr = FakeSshStream(b" failure\r\n", fake_channel)
+    monkeypatch.setattr(command_runner, "logger", fake_logger)
+
+    stdout_text, stderr_text, exit_code = command_runner.log_ssh_output(
+        stdout,
+        stderr,
+    )
+
+    assert stdout_text == "output"
+    assert stderr_text == "failure"
+    assert exit_code == 7
+    assert fake_logger.infos == ["SSH stdout: output"]
+    assert fake_logger.errors == [
+        "SSH stderr: failure",
+        "SSH command exit code: 7",
+    ]
+
+
+class FakeSshChannel:
+    """Return a configured SSH command exit code."""
+
+    def __init__(self, exit_code: int):
+        self.exit_code = exit_code
+
+    def recv_exit_status(self) -> int:
+        """Return the configured exit code."""
+        return self.exit_code
+
+
+class FakeSshStream:
+    """Provide byte output and the associated fake SSH channel."""
+
+    def __init__(self, output: bytes, channel: FakeSshChannel):
+        self.output = output
+        self.channel = channel
+
+    def read(self) -> bytes:
+        """Return the configured stream output."""
+        return self.output
+
+
 class FakeLogger:
     """Collect error and debug messages for assertions."""
 
     def __init__(self):
         self.errors = []
         self.debugs = []
+        self.infos = []
 
     def error(self, message: str):
         """Collect an error message."""
@@ -104,3 +151,7 @@ class FakeLogger:
     def debug(self, message: str):
         """Collect a debug message."""
         self.debugs.append(message)
+
+    def info(self, message: str):
+        """Collect an informational message."""
+        self.infos.append(message)

@@ -1,8 +1,13 @@
 """Run external commands and report their captured output."""
 
+import re
 import subprocess
 
+import paramiko
+
 from ipa_clutch_batch.logger import logger
+
+ANSI_COLOR_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def run_command(command: list[str]) -> subprocess.CompletedProcess[str] | None:
@@ -39,3 +44,32 @@ def log_command_output(
             logger.error(output_line)
         else:
             logger.debug(output_line)
+
+
+def log_ssh_output(
+    stdout: paramiko.ChannelFile,
+    stderr: paramiko.ChannelStderrFile,
+) -> tuple[str, str, int]:
+    """Read, clean, and log the output returned by an SSH command."""
+    stdout_text = stdout.read().decode("utf-8", errors="replace")
+    stderr_text = stderr.read().decode("utf-8", errors="replace")
+    stdout_text = _clean_command_output(stdout_text)
+    stderr_text = _clean_command_output(stderr_text)
+    exit_code = stdout.channel.recv_exit_status()
+
+    if stdout_text:
+        logger.debug(f"SSH stdout: {stdout_text}")
+    if stderr_text:
+        logger.error(f"SSH stderr: {stderr_text}")
+
+    if exit_code != 0:
+        logger.error(f"SSH command exit code: {exit_code}")
+
+    return stdout_text, stderr_text, exit_code
+
+
+def _clean_command_output(command_output: str) -> str:
+    """Remove terminal color codes and normalize command output."""
+    clean_output = ANSI_COLOR_PATTERN.sub("", command_output)
+    clean_output = clean_output.replace("\r", "")
+    return clean_output.strip()
