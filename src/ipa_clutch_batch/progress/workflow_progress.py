@@ -13,6 +13,7 @@ from ipa_clutch_batch.logger import set_console_output_hooks
 BAR_WIDTH = 30
 CLEAR_LINE = "\r\033[2K"
 GREEN = "\033[32m"
+RED = "\033[31m"
 RESET = "\033[0m"
 FINISHED_MESSAGE = "All Tasks Finished Closing SSH Service"
 
@@ -156,6 +157,27 @@ class WorkflowProgress:
         """Show the requested green message before SSH is closed."""
         self._finish_active_line()
         self._stream.write(f"{GREEN}{FINISHED_MESSAGE}{RESET}\n")
+        self._stream.flush()
+
+    def show_final_summary(
+        self,
+        input_count: int,
+        success_count: int,
+        fail_count: int,
+        failed_ipa_names: tuple[str, ...],
+    ):
+        """Show final counts and failed input IPA filenames."""
+        self._finish_active_line()
+        summary_line = (
+            f"input:{input_count} "
+            f"{GREEN}success:{success_count}{RESET} "
+            f"{RED}fail:{fail_count}{RESET}\n"
+        )
+        self._stream.write(summary_line)
+
+        for ipa_name in failed_ipa_names:
+            self._stream.write(f"{RED}fail: {ipa_name}{RESET}\n")
+
         self._stream.flush()
 
     def clear_for_log(self):

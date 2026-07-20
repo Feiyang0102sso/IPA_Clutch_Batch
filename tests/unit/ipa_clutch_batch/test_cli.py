@@ -96,6 +96,7 @@ def test_batch_checks_clutch_after_ssh_before_ipa_pipeline(
         "clutch",
         "progress:clutch_completed",
         "pipeline",
+        "progress:summary:1:1:0",
         "progress:finished",
         "close",
         "progress:closed",
@@ -213,6 +214,30 @@ def test_verbose_argument_enables_complete_console_logs(monkeypatch, tmp_path):
     assert arguments.input_path == tmp_path
 
 
+def test_final_summary_logs_counts_and_failed_input_names(monkeypatch):
+    """Write the same plain final summary lines to the complete log."""
+    logged_messages = []
+    process_summary = FakeProcessSummary(
+        total=4,
+        moved=2,
+        failed=2,
+        failed_ipa_names=(
+            "Gun Bros. 1.0.0.ipa",
+            "Second App.ipa",
+        ),
+    )
+
+    monkeypatch.setattr(main, "log_file_only", logged_messages.append)
+
+    main._log_final_summary(process_summary)
+
+    assert logged_messages == [
+        "input:4 success:2 fail:2",
+        "fail: Gun Bros. 1.0.0.ipa",
+        "fail: Second App.ipa",
+    ]
+
+
 @dataclass(frozen=True)
 class FakeClutchResult:
     """Expose the Clutch success state used by the main workflow."""
@@ -229,6 +254,7 @@ class FakeProcessSummary:
     moved: int = 1
     failed: int = 0
     skipped: int = 0
+    failed_ipa_names: tuple[str, ...] = ()
 
 
 class FakeBatchSshConnection:
@@ -275,6 +301,19 @@ class FakeProgressDisplay:
     def show_all_tasks_finished(self):
         """Record the final message before SSH cleanup."""
         self.workflow_events.append("progress:finished")
+
+    def show_final_summary(
+        self,
+        input_count: int,
+        success_count: int,
+        fail_count: int,
+        failed_ipa_names: tuple[str, ...],
+    ):
+        """Record the final summary values."""
+        assert len(failed_ipa_names) == fail_count
+        self.workflow_events.append(
+            f"progress:summary:{input_count}:{success_count}:{fail_count}"
+        )
 
     def close(self):
         """Record progress cleanup."""

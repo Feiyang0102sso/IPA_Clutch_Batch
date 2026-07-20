@@ -9,6 +9,7 @@ import sys
 LOGGER_NAME = "ipa_clutch_batch"
 STDOUT_HANDLER_NAME = "console_stdout"
 STDERR_HANDLER_NAME = "console_stderr"
+FILE_ONLY_RECORD_ATTRIBUTE = "file_only"
 
 _before_console_output: Callable[[], None] | None = None
 _after_console_output: Callable[[], None] | None = None
@@ -55,6 +56,13 @@ class ConsoleStreamHandler(logging.StreamHandler):
                 _after_console_output()
 
 
+class ConsoleRecordFilter(logging.Filter):
+    """Hide records intended only for the complete log file."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not getattr(record, FILE_ONLY_RECORD_ATTRIBUTE, False)
+
+
 def setup_logger() -> logging.Logger:
     """
     Initialize a logger with console handlers for stdout and stderr.
@@ -68,11 +76,13 @@ def setup_logger() -> logging.Logger:
         stdout_handler.set_name(STDOUT_HANDLER_NAME)
         stdout_handler.setLevel(logging.WARNING)
         stdout_handler.addFilter(lambda record: record.levelno < logging.ERROR)
+        stdout_handler.addFilter(ConsoleRecordFilter())
         stdout_handler.setFormatter(ColoredFormatter())
 
         stderr_handler = ConsoleStreamHandler(sys.stderr)
         stderr_handler.set_name(STDERR_HANDLER_NAME)
         stderr_handler.setLevel(logging.ERROR)
+        stderr_handler.addFilter(ConsoleRecordFilter())
         stderr_handler.setFormatter(ColoredFormatter())
 
         project_logger.addHandler(stdout_handler)
@@ -94,6 +104,16 @@ def configure_console_logging(verbose: bool):
     for handler in project_logger.handlers:
         if handler.get_name() == STDOUT_HANDLER_NAME:
             handler.setLevel(stdout_level)
+
+
+def log_file_only(message: str, level: int = logging.INFO):
+    """Write a record to file handlers without duplicating console output."""
+    logger.log(
+        level,
+        message,
+        extra={FILE_ONLY_RECORD_ATTRIBUTE: True},
+        stacklevel=2,
+    )
 
 
 def set_console_output_hooks(

@@ -1,5 +1,6 @@
 """Unit tests for console logging modes and progress coordination."""
 
+from io import StringIO
 import logging
 
 from ipa_clutch_batch import logger as logger_module
@@ -34,6 +35,30 @@ def test_file_logging_remains_complete_in_both_console_modes(tmp_path):
         file_handler.close()
         logger_module.logger.removeHandler(file_handler)
         logger_module.configure_console_logging(False)
+
+
+def test_file_only_log_is_written_without_console_output(tmp_path):
+    """Persist final summary lines without duplicating terminal output."""
+    log_path = tmp_path / "summary.log"
+    console_stream = StringIO()
+    console_handler = logger_module.ConsoleStreamHandler(console_stream)
+    console_handler.setLevel(logging.DEBUG)
+    console_handler.addFilter(logger_module.ConsoleRecordFilter())
+    logger_module.add_file_handler(log_path)
+    file_handler = _get_file_handler()
+    logger_module.logger.addHandler(console_handler)
+
+    try:
+        logger_module.log_file_only("input:4 success:2 fail:2")
+        file_handler.flush()
+
+        log_content = log_path.read_text(encoding="utf-8")
+        assert "input:4 success:2 fail:2" in log_content
+        assert console_stream.getvalue() == ""
+    finally:
+        logger_module.logger.removeHandler(console_handler)
+        file_handler.close()
+        logger_module.logger.removeHandler(file_handler)
 
 
 def _get_stdout_handler() -> logging.Handler:

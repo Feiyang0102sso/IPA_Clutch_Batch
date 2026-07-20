@@ -59,6 +59,7 @@ def test_pipeline_moves_each_dump_before_installing_next(monkeypatch, tmp_path: 
     assert summary.moved == 2
     assert summary.failed == 0
     assert summary.skipped == 0
+    assert summary.failed_ipa_names == ()
     assert progress_reporter.events == [
         "start:2",
         "begin:Install:app_1.ipa",
@@ -122,6 +123,7 @@ def test_pipeline_stops_when_move_or_remote_cleanup_fails(
     assert summary.move_failed == 1
     assert summary.failed == 1
     assert summary.skipped == 2
+    assert summary.failed_ipa_names == ("app_1.ipa",)
     assert progress_reporter.events == [
         "start:3",
         "begin:Install:app_1.ipa",
@@ -213,6 +215,7 @@ def test_compatibility_failure_skips_remaining_steps_and_fills_progress(
     assert summary.install_failed == 1
     assert summary.moved == 2
     assert summary.skipped == 0
+    assert summary.failed_ipa_names == ("app_3.ipa",)
     rendered_output = progress_output.getvalue()
     assert "IPA Processing - Skipped" in rendered_output
     assert "9/9" in rendered_output

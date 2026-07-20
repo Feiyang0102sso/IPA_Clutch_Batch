@@ -31,6 +31,7 @@ class BatchProcessSummary:
     crack_failed: int
     move_failed: int
     skipped: int
+    failed_ipa_names: tuple[str, ...]
 
     @property
     def failed(self) -> int:
@@ -59,6 +60,7 @@ def run_ipa_pipeline(
             crack_failed=0,
             move_failed=0,
             skipped=0,
+            failed_ipa_names=(),
         )
 
     logger.info(f"Found {total_count} IPA file(s) to process.")
@@ -69,6 +71,7 @@ def run_ipa_pipeline(
     crack_failed_count = 0
     move_failed_count = 0
     skipped_count = 0
+    failed_ipa_names = []
     sftp_client = None
 
     try:
@@ -85,6 +88,7 @@ def run_ipa_pipeline(
                     ipa_info = get_single_ipa_info(ipa_path)
                     if ipa_info is None:
                         install_failed_count += 1
+                        failed_ipa_names.append(ipa_path.name)
                         continue
 
                     logger.info(f"Target bundle ID: {ipa_info.bundle_identifier}")
@@ -94,6 +98,7 @@ def run_ipa_pipeline(
                     )
                     if compatibility_error is not None:
                         install_failed_count += 1
+                        failed_ipa_names.append(ipa_path.name)
                         logger.error(
                             f"Compatibility check failed: {compatibility_error}"
                         )
@@ -102,10 +107,12 @@ def run_ipa_pipeline(
                     install_result = install_ipa(ipa_path, udid=device_info.udid)
                     if install_result is None:
                         install_failed_count += 1
+                        failed_ipa_names.append(ipa_path.name)
                         continue
 
                     if not install_result.success:
                         install_failed_count += 1
+                        failed_ipa_names.append(ipa_path.name)
                         if install_result.failure_reason is not None:
                             logger.error(
                                 f"Failure reason: {install_result.failure_reason}"
@@ -127,6 +134,7 @@ def run_ipa_pipeline(
                     )
                     if not crack_result.success:
                         crack_failed_count += 1
+                        failed_ipa_names.append(ipa_path.name)
                         if crack_result.device_storage_full:
                             skipped_count = total_count - process_index
                             _log_device_storage_full_warning(skipped_count)
@@ -137,6 +145,7 @@ def run_ipa_pipeline(
                 remote_ipa_path = crack_result.remote_ipa_path
                 if remote_ipa_path is None:
                     move_failed_count += 1
+                    failed_ipa_names.append(ipa_path.name)
                     skipped_count = total_count - process_index
                     logger.error(
                         "Clutch succeeded without a dump path. "
@@ -152,6 +161,7 @@ def run_ipa_pipeline(
                         sftp_client = ssh_connection.open_sftp()
                         if sftp_client is None:
                             move_failed_count += 1
+                            failed_ipa_names.append(ipa_path.name)
                             skipped_count = total_count - process_index
                             logger.error(
                                 "Cannot open SFTP for the dumped IPA. "
@@ -173,6 +183,7 @@ def run_ipa_pipeline(
                         continue
 
                     move_failed_count += 1
+                    failed_ipa_names.append(ipa_path.name)
                     skipped_count = total_count - process_index
                     logger.error(
                         "Dump move or remote cleanup failed. "
@@ -192,6 +203,7 @@ def run_ipa_pipeline(
         crack_failed=crack_failed_count,
         move_failed=move_failed_count,
         skipped=skipped_count,
+        failed_ipa_names=tuple(failed_ipa_names),
     )
     logger.info(
         f"Batch processing completed: {summary.total} total, "

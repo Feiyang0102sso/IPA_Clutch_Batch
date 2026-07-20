@@ -187,3 +187,26 @@ def test_finished_message_is_green_and_exact():
 
     rendered_output = output_stream.getvalue()
     assert rendered_output == f"\033[32m{FINISHED_MESSAGE}\033[0m\n"
+
+
+def test_final_summary_colors_counts_and_failed_ipa_names():
+    """Keep input default, success green, and failures red."""
+    output_stream = StringIO()
+    progress_display = WorkflowProgress(stream=output_stream)
+
+    progress_display.show_final_summary(
+        input_count=4,
+        success_count=2,
+        fail_count=2,
+        failed_ipa_names=(
+            "Gun Bros. 1.0.0.ipa",
+            "Second App.ipa",
+        ),
+    )
+
+    rendered_output = output_stream.getvalue()
+    assert rendered_output.startswith(
+        "input:4 \033[32msuccess:2\033[0m \033[31mfail:2\033[0m\n"
+    )
+    assert "\033[31mfail: Gun Bros. 1.0.0.ipa\033[0m\n" in rendered_output
+    assert "\033[31mfail: Second App.ipa\033[0m\n" in rendered_output

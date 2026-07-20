@@ -12,9 +12,10 @@ from ipa_clutch_batch.device import (
     get_single_connected_device_udid,
     run_ssh22_tunnel,
 )
-from ipa_clutch_batch.ipa_processing import run_ipa_pipeline
+from ipa_clutch_batch.ipa_processing import BatchProcessSummary, run_ipa_pipeline
 from ipa_clutch_batch.logger import (
     configure_console_logging,
+    log_file_only,
     logger,
 )
 from ipa_clutch_batch.progress import WorkflowProgress
@@ -104,6 +105,13 @@ def main() -> int:
             f"{process_summary.cracked} cracked, {process_summary.moved} moved, "
             f"{total_failed} failed, {process_summary.skipped} skipped."
         )
+        _log_final_summary(process_summary)
+        progress_display.show_final_summary(
+            process_summary.total,
+            process_summary.moved,
+            total_failed,
+            process_summary.failed_ipa_names,
+        )
         progress_display.show_all_tasks_finished()
         if total_failed > 0:
             return 1
@@ -180,6 +188,17 @@ def _contains_ipa_files(input_dir: Path) -> bool:
         if ipa_path.is_file():
             return True
     return False
+
+
+def _log_final_summary(process_summary: BatchProcessSummary):
+    """Write the user-facing final summary to the complete log file."""
+    log_file_only(
+        f"input:{process_summary.total} "
+        f"success:{process_summary.moved} "
+        f"fail:{process_summary.failed}"
+    )
+    for ipa_name in process_summary.failed_ipa_names:
+        log_file_only(f"fail: {ipa_name}")
 
 # !!! for test only !!!
 # ipa-clutch-batch input
