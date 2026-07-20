@@ -3,6 +3,8 @@
 from pathlib import Path
 import subprocess
 
+from ipa_clutch_batch.device import DeviceInfo
+from ipa_clutch_batch.ipa_info import IpaInfo
 from ipa_clutch_batch.ipa_processing import ipa_installer
 
 
@@ -79,3 +81,60 @@ def test_install_ipa_keeps_ascii_path_unchanged(monkeypatch, tmp_path: Path):
     assert install_result.success
     assert captured_install_path == ipa_path.resolve()
     assert list(tmp_path.glob("*.ipa")) == [ipa_path]
+
+
+def test_iphone_only_app_is_compatible_with_ipad(tmp_path: Path):
+    """iPad can install iPhone-only apps in compatibility mode."""
+    ipa_info = _create_ipa_info(tmp_path, device_families=[1])
+    device_info = _create_device_info(device_family=2)
+
+    compatibility_error = ipa_installer.get_ipa_compatibility_error(
+        ipa_info,
+        device_info,
+    )
+
+    assert compatibility_error is None
+
+
+def test_ipad_only_app_is_not_compatible_with_iphone(tmp_path: Path):
+    """iPhone cannot install iPad-only apps."""
+    ipa_info = _create_ipa_info(tmp_path, device_families=[2])
+    device_info = _create_device_info(device_family=1)
+
+    compatibility_error = ipa_installer.get_ipa_compatibility_error(
+        ipa_info,
+        device_info,
+    )
+
+    assert compatibility_error == (
+        "App supports iPad, but connected device is iPhone/iPod."
+    )
+
+
+def _create_ipa_info(
+    tmp_path: Path,
+    device_families: list[int],
+) -> IpaInfo:
+    """Create stable IPA metadata for compatibility checks."""
+    return IpaInfo(
+        ipa_path=tmp_path / "Test.ipa",
+        display_name="Test",
+        version="1.0",
+        bundle_version="1.0",
+        short_version="1.0",
+        bundle_identifier="com.example.test",
+        device_families=device_families,
+        minimum_os_version="6.0",
+    )
+
+
+def _create_device_info(device_family: int) -> DeviceInfo:
+    """Create stable device metadata for compatibility checks."""
+    return DeviceInfo(
+        udid="mock-udid",
+        name="Mock Device",
+        product_type="iPad3,1",
+        product_version="6.1.3",
+        cpu_architecture="armv7",
+        device_family=device_family,
+    )

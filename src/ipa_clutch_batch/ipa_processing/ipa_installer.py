@@ -200,10 +200,15 @@ def get_ipa_compatibility_error(
     device_info: DeviceInfo,
 ) -> str | None:
     """Return a clear compatibility error before installation when possible."""
-    if ipa_info.device_families and device_info.device_family not in ipa_info.device_families:
-        supported_names = _format_device_families(ipa_info.device_families)
-        current_name = _format_device_families([device_info.device_family])
-        return f"App supports {supported_names}, but connected device is {current_name}."
+    if ipa_info.device_families:
+        is_family_compatible = _is_device_family_compatible(
+            ipa_info.device_families,
+            device_info.device_family,
+        )
+        if not is_family_compatible:
+            supported_names = _format_device_families(ipa_info.device_families)
+            current_name = _format_device_families([device_info.device_family])
+            return f"App supports {supported_names}, but connected device is {current_name}."
 
     minimum_os_version = ipa_info.minimum_os_version
     if isinstance(minimum_os_version, str) and minimum_os_version:
@@ -214,6 +219,25 @@ def get_ipa_compatibility_error(
             )
 
     return None
+
+
+def _is_device_family_compatible(
+    supported_device_families: list[int],
+    connected_device_family: int,
+) -> bool:
+    """Return whether iOS allows this app family on the connected device."""
+    if connected_device_family in supported_device_families:
+        return True
+
+    # iPad can install iPhone/iPod apps in compatibility mode.
+    if connected_device_family == 2 and 1 in supported_device_families:
+        logger.warning(
+            "App only declares iPhone/iPod support, but iPad installation is "
+            "allowed in iOS compatibility mode."
+        )
+        return True
+
+    return False
 
 
 def _format_device_families(device_families: list[int]) -> str:
