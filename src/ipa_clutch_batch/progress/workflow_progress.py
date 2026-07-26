@@ -3,18 +3,16 @@
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from enum import Enum
+import logging
 from pathlib import Path
 import sys
 from typing import Protocol, TextIO
 
-from ipa_clutch_batch.logger import set_console_output_hooks
+from ipa_clutch_batch.logger import ColoredFormatter, set_console_output_hooks
 
 
 BAR_WIDTH = 30
 CLEAR_LINE = "\r\033[2K"
-GREEN = "\033[32m"
-RED = "\033[31m"
-RESET = "\033[0m"
 FINISHED_MESSAGE = "All Tasks Finished Closing SSH Service"
 
 
@@ -42,6 +40,9 @@ class BatchProgressReporter(Protocol):
     ) -> AbstractContextManager[None]:
         """Track one attempted IPA processing step."""
 
+    def show_message(self, message: str, level: int = logging.INFO):
+        """Show one progress-aware user message."""
+
 
 class NullBatchProgressReporter:
     """Ignore IPA progress events when no display was supplied."""
@@ -62,6 +63,9 @@ class NullBatchProgressReporter:
     ) -> Iterator[None]:
         """Ignore one attempted IPA processing step."""
         yield
+
+    def show_message(self, message: str, level: int = logging.INFO):
+        """Ignore one progress-aware user message."""
 
 
 NO_BATCH_PROGRESS = NullBatchProgressReporter()
@@ -156,8 +160,7 @@ class WorkflowProgress:
     def show_all_tasks_finished(self):
         """Show the requested green message before SSH is closed."""
         self._finish_active_line()
-        self._stream.write(f"{GREEN}{FINISHED_MESSAGE}{RESET}\n")
-        self._stream.flush()
+        self._write_colored_message(FINISHED_MESSAGE, logging.INFO)
 
     def show_final_summary(
         self,
@@ -170,15 +173,26 @@ class WorkflowProgress:
         self._finish_active_line()
         summary_line = (
             f"input:{input_count} "
-            f"{GREEN}success:{success_count}{RESET} "
-            f"{RED}fail:{fail_count}{RESET}\n"
+            f"{self._color_text(f'success:{success_count}', logging.INFO)} "
+            f"{self._color_text(f'fail:{fail_count}', logging.ERROR)}\n"
         )
         self._stream.write(summary_line)
 
         for ipa_name in failed_ipa_names:
-            self._stream.write(f"{RED}fail: {ipa_name}{RESET}\n")
+            self._stream.write(
+                f"{self._color_text(f'fail: {ipa_name}', logging.ERROR)}\n"
+            )
 
         self._stream.flush()
+
+    def show_message(self, message: str, level: int = logging.INFO):
+        """Print one colored log-level message without a log prefix."""
+        if not self._enabled:
+            return
+
+        self._finish_active_line()
+        self._write_colored_message(message, level)
+        self._render_ipa_progress()
 
     def clear_for_log(self):
         """Temporarily clear the progress line before a log is emitted."""
@@ -263,3 +277,13 @@ class WorkflowProgress:
         self._stream.write(f"{CLEAR_LINE}{self._active_line}\n")
         self._stream.flush()
         self._active_line = None
+
+    def _write_colored_message(self, message: str, level: int):
+        self._stream.write(f"{self._color_text(message, level)}\n")
+        self._stream.flush()
+
+    def _color_text(self, text: str, level: int) -> str:
+        color = ColoredFormatter.COLORS.get(level, "")
+        if not color:
+            return text
+        return f"{color}{text}{ColoredFormatter.RESET}"

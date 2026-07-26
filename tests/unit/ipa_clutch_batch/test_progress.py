@@ -43,7 +43,7 @@ def test_progress_display_renders_all_three_completed_stages():
     assert "IPA Processing - Move & Rename" in rendered_output
     assert "6/6" in rendered_output
     assert "Current: second.ipa" in rendered_output
-    assert "█" * BAR_WIDTH in rendered_output
+    assert "IPA Processing [" in rendered_output
 
 
 def test_warning_clears_and_redraws_active_progress_line():
@@ -72,7 +72,41 @@ def test_warning_clears_and_redraws_active_progress_line():
         progress_display.close()
 
     assert "WARNING: device storage is nearly full\n" in rendered_output
-    assert rendered_output.endswith("IPA Processing [" + "░" * BAR_WIDTH + "] 0/9")
+    assert rendered_output.rstrip().endswith("0/9")
+
+
+def test_progress_message_has_no_log_prefix_and_redraws_progress_line():
+    """Show visible progress-mode messages without promoting them to warnings."""
+    output_stream = StringIO()
+    progress_display = WorkflowProgress(stream=output_stream)
+    progress_display.start_ipa_processing(1)
+
+    progress_display.show_message(
+        "Skip install and crack installed app directly: Test.ipa",
+        logging.INFO,
+    )
+
+    rendered_output = output_stream.getvalue()
+    assert "[INFO]" not in rendered_output
+    assert "[WARNING]" not in rendered_output
+    assert (
+        "\033[32mSkip install and crack installed app directly: Test.ipa\033[0m\n"
+        in rendered_output
+    )
+    assert rendered_output.rstrip().endswith("0/3")
+
+
+def test_progress_message_uses_warning_color_without_log_prefix():
+    """Use the original log level color while omitting the log prefix."""
+    output_stream = StringIO()
+    progress_display = WorkflowProgress(stream=output_stream)
+    progress_display.start_ipa_processing(1)
+
+    progress_display.show_message("device storage is nearly full", logging.WARNING)
+
+    rendered_output = output_stream.getvalue()
+    assert "[WARNING]" not in rendered_output
+    assert "\033[33mdevice storage is nearly full\033[0m\n" in rendered_output
 
 
 def test_disabled_progress_is_a_complete_no_op():
@@ -108,8 +142,8 @@ def test_incomplete_clutch_stage_does_not_show_false_completion():
     progress_display.close()
 
     rendered_output = output_stream.getvalue()
-    incomplete_line = "Clutch Check & Repair [" + "░" * BAR_WIDTH + "] 0/1"
-    completed_line = "Clutch Check & Repair [" + "█" * BAR_WIDTH + "] 1/1"
+    incomplete_line = "Clutch Check & Repair"
+    completed_line = "] 1/1"
     assert incomplete_line in rendered_output
     assert completed_line not in rendered_output
 

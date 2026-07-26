@@ -42,11 +42,11 @@ def test_get_single_ipa_info_falls_back_to_bundle_name(monkeypatch, tmp_path: Pa
 
     assert ipa_info is not None
     assert ipa_info.display_name == "Bundle Name App"
-    assert fake_logger.debugs == [
+    assert fake_logger.debugs == []
+    assert fake_logger.warnings == [
         "Cannot find 'CFBundleDisplayName' in Info.plist (bundle_name_only.ipa); "
         "using 'CFBundleName' instead",
     ]
-    assert fake_logger.warnings == []
     assert fake_logger.errors == []
 
 
@@ -66,11 +66,11 @@ def test_get_single_ipa_info_falls_back_to_executable_name(monkeypatch, tmp_path
 
     assert ipa_info is not None
     assert ipa_info.display_name == "OndineiPhone"
-    assert fake_logger.debugs == [
+    assert fake_logger.debugs == []
+    assert fake_logger.warnings == [
         "Cannot find 'CFBundleDisplayName' in Info.plist (executable_name_only.ipa); "
         "using 'CFBundleExecutable' instead",
     ]
-    assert fake_logger.warnings == []
     assert fake_logger.errors == []
 
 

@@ -37,6 +37,7 @@ already_crack/
 tools/
 intro.md
 _test/
+*.xml
 
 # resources
 resources/libimobile/*

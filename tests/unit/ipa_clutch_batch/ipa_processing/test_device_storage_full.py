@@ -239,6 +239,11 @@ def _mock_batch_dependencies(
         _get_no_compatibility_error,
     )
     monkeypatch.setattr(ipa_pipeline, "install_ipa", fake_install)
+    monkeypatch.setattr(
+        ipa_pipeline,
+        "is_already_installed_current_ipa",
+        _is_not_already_installed,
+    )
     monkeypatch.setattr(ipa_pipeline, "crack_installed_app", fake_crack)
     monkeypatch.setattr(
         ipa_pipeline,
@@ -265,6 +270,11 @@ def _get_fake_ipa_info(ipa_path: Path):
 def _get_no_compatibility_error(ipa_info, device_info):
     """Report that the placeholder IPA is compatible with the mock device."""
     return None
+
+
+def _is_not_already_installed(ipa_info, udid: str):
+    """Report that the mock IPA still needs installation."""
+    return False
 
 
 def _move_dump_successfully(remote_ipa_path, cracked_dir, sftp_client):

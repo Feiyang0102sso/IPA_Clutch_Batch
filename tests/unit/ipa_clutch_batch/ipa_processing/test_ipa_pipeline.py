@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 from io import StringIO
+import logging
 from pathlib import Path, PurePosixPath
 
 from ipa_clutch_batch.device import DeviceInfo
@@ -135,6 +136,70 @@ def test_pipeline_stops_when_move_or_remote_cleanup_fails(
     ]
 
 
+def test_pipeline_skips_install_when_same_ipa_is_already_installed(
+    monkeypatch,
+    tmp_path: Path,
+):
+    """Crack the installed app directly when bundle ID and version already match."""
+    _create_ipa_files(tmp_path, 1)
+    pipeline_events = []
+    progress_reporter = FakeProgressReporter()
+    ssh_connection = FakePipelineSshConnection(pipeline_events)
+
+    def fake_install(ipa_path: Path, udid: str):
+        raise AssertionError("already installed IPA must not be installed again")
+
+    def fake_is_already_installed(ipa_info, udid: str):
+        pipeline_events.append(f"already_installed:{ipa_info.bundle_identifier}")
+        return True
+
+    def fake_skip(ipa_path: Path, ipa_info, udid: str):
+        pipeline_events.append(f"skip_install:{ipa_path.stem}")
+        return _create_skipped_install_result(ipa_path, udid)
+
+    def fake_crack(bundle_identifier: str, connection):
+        app_name = bundle_identifier.rsplit(".", 1)[-1]
+        pipeline_events.append(f"crack:{app_name}")
+        return _create_successful_crack_result(bundle_identifier)
+
+    def fake_move(remote_ipa_path: str, cracked_dir: Path, sftp_client):
+        remote_name = PurePosixPath(remote_ipa_path).stem
+        pipeline_events.append(f"move:{remote_name}")
+        return True
+
+    _mock_pipeline_dependencies(monkeypatch, fake_install, fake_crack, fake_move)
+    monkeypatch.setattr(
+        ipa_pipeline,
+        "is_already_installed_current_ipa",
+        fake_is_already_installed,
+    )
+    monkeypatch.setattr(ipa_pipeline, "skip_current_ipa", fake_skip)
+
+    summary = ipa_pipeline.run_ipa_pipeline(
+        tmp_path,
+        tmp_path / "cracked",
+        _create_device_info(),
+        ssh_connection,
+        progress_reporter=progress_reporter,
+    )
+
+    assert pipeline_events == [
+        "already_installed:com.example.app_1",
+        "skip_install:app_1",
+        "crack:app_1",
+        "open_sftp",
+        "move:app_1",
+        "close_sftp",
+    ]
+    assert summary.cracked == 1
+    assert summary.moved == 1
+    assert summary.failed == 0
+    assert (
+        "message:INFO:Skip install and crack installed app directly: app_1.ipa"
+        in progress_reporter.events
+    )
+
+
 def test_single_mover_deletes_remote_dump_after_local_verification(
     monkeypatch,
     tmp_path: Path,
@@ -195,6 +260,11 @@ def test_compatibility_failure_skips_remaining_steps_and_fills_progress(
     monkeypatch.setattr(ipa_pipeline, "install_ipa", install_compatible_ipa)
     monkeypatch.setattr(
         ipa_pipeline,
+        "is_already_installed_current_ipa",
+        _is_not_already_installed,
+    )
+    monkeypatch.setattr(
+        ipa_pipeline,
         "crack_installed_app",
         crack_compatible_ipa,
     )
@@ -235,6 +305,11 @@ def _mock_pipeline_dependencies(
         _get_no_compatibility_error,
     )
     monkeypatch.setattr(ipa_pipeline, "install_ipa", fake_install)
+    monkeypatch.setattr(
+        ipa_pipeline,
+        "is_already_installed_current_ipa",
+        _is_not_already_installed,
+    )
     monkeypatch.setattr(ipa_pipeline, "crack_installed_app", fake_crack)
     monkeypatch.setattr(ipa_pipeline, "move_single_dumped_ipa", fake_move)
 
@@ -254,6 +329,11 @@ def _get_fake_ipa_info(ipa_path: Path):
 def _get_no_compatibility_error(ipa_info, device_info):
     """Report that the placeholder IPA is compatible with the mock device."""
     return None
+
+
+def _is_not_already_installed(ipa_info, udid: str):
+    """Report that the mock IPA still needs installation."""
+    return False
 
 
 def _create_device_info() -> DeviceInfo:
@@ -279,6 +359,21 @@ def _create_successful_install_result(ipa_path: Path, udid: str) -> InstallResul
         stderr="",
         failure_reason=None,
         device_storage_full=False,
+    )
+
+
+def _create_skipped_install_result(ipa_path: Path, udid: str) -> InstallResult:
+    """Create an install result that represents a skipped reinstall."""
+    return InstallResult(
+        ipa_path=ipa_path,
+        udid=udid,
+        success=True,
+        return_code=0,
+        stdout="Already installed.",
+        stderr="",
+        failure_reason=None,
+        device_storage_full=False,
+        skipped=True,
     )
 
 
@@ -380,3 +475,8 @@ class FakeProgressReporter:
             yield
         finally:
             self.events.append(f"complete:{step.value}:{ipa_path.name}")
+
+    def show_message(self, message: str, level: int = logging.INFO):
+        """Record one progress-visible message."""
+        level_name = logging.getLevelName(level)
+        self.events.append(f"message:{level_name}:{message}")

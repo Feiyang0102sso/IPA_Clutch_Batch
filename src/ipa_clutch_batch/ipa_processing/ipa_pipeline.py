@@ -1,6 +1,7 @@
 """Run the sequential install, crack, move, and cleanup pipeline."""
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path, PurePosixPath
 
 from ipa_clutch_batch.common.ipa_utils import ipa_sort_key
@@ -10,6 +11,8 @@ from ipa_clutch_batch.ipa_processing.ipa_cracker import crack_installed_app
 from ipa_clutch_batch.ipa_processing.ipa_installer import (
     get_ipa_compatibility_error,
     install_ipa,
+    is_already_installed_current_ipa,
+    skip_current_ipa,
 )
 from ipa_clutch_batch.ipa_processing.ipa_mover import move_single_dumped_ipa
 from ipa_clutch_batch.logger import logger
@@ -104,7 +107,23 @@ def run_ipa_pipeline(
                         )
                         continue
 
-                    install_result = install_ipa(ipa_path, udid=device_info.udid)
+                    already_installed = is_already_installed_current_ipa(
+                        ipa_info,
+                        device_info.udid,
+                    )
+                    if already_installed:
+                        install_result = skip_current_ipa(
+                            ipa_path,
+                            ipa_info,
+                            device_info.udid,
+                        )
+                        progress_reporter.show_message(
+                            f"Skip install and crack installed app directly: "
+                            f"{ipa_path.name}",
+                            logging.INFO,
+                        )
+                    else:
+                        install_result = install_ipa(ipa_path, udid=device_info.udid)
                     if install_result is None:
                         install_failed_count += 1
                         failed_ipa_names.append(ipa_path.name)

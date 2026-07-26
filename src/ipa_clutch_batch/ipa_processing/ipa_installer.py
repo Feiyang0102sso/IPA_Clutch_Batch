@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+import plistlib
 import subprocess
 from uuid import uuid4
 
@@ -13,12 +14,19 @@ from ipa_clutch_batch.common.command_runner import (
     run_command,
 )
 from ipa_clutch_batch.common.ipa_utils import ipa_sort_key
-from ipa_clutch_batch.config import get_ideviceinstaller_path
+from ipa_clutch_batch.config import (
+    INSTALLED_IPA_CACHE_PATH,
+    get_ideviceinstaller_path,
+)
 from ipa_clutch_batch.device import (
     DeviceInfo,
     get_single_connected_device_udid,
 )
-from ipa_clutch_batch.ipa_info import IpaInfo, get_single_ipa_info
+from ipa_clutch_batch.ipa_info import (
+    IpaInfo,
+    get_single_ipa_info,
+    select_preferred_version,
+)
 from ipa_clutch_batch.logger import logger
 
 
@@ -34,6 +42,17 @@ class InstallResult:
     stderr: str
     failure_reason: str | None
     device_storage_full: bool
+    skipped: bool = False
+
+
+@dataclass(frozen=True)
+class InstalledIpaInfo:
+    """Metadata for one app currently installed on the device."""
+
+    bundle_identifier: str
+    version: str
+    bundle_version: str | None
+    short_version: str | None
 
 
 @dataclass(frozen=True)
@@ -43,6 +62,9 @@ class BatchInstallSummary:
     total: int
     succeeded: int
     failed: int
+
+
+_installed_ipa_cache_by_udid: dict[str, dict[str, InstalledIpaInfo]] = {}
 
 
 @contextmanager
@@ -123,6 +145,9 @@ def install_ipa(
 
     if success:
         logger.info(f"IPA installed successfully: {resolved_ipa_path.name}")
+        ipa_info = get_single_ipa_info(resolved_ipa_path)
+        if ipa_info is not None:
+            _remember_installed_ipa(target_udid, ipa_info)
     else:
         logger.error(
             f"Failed to install {resolved_ipa_path.name}. "
@@ -141,6 +166,100 @@ def install_ipa(
             device_storage_full,
         ),
         device_storage_full=device_storage_full,
+    )
+
+
+def query_installed_ipa(
+    udid: str,
+    ideviceinstaller_path: Path | None = None,
+) -> dict[str, InstalledIpaInfo]:
+    """Query installed apps once per device and save the result locally."""
+    if udid in _installed_ipa_cache_by_udid:
+        logger.info(f"Use cached installed IPA XML: {INSTALLED_IPA_CACHE_PATH}")
+        return _installed_ipa_cache_by_udid[udid]
+
+    installer_path = ideviceinstaller_path
+    if installer_path is None:
+        installer_path = get_ideviceinstaller_path()
+
+    if not installer_path.is_file():
+        logger.error(f"IPA installer tool not found: {installer_path}")
+        return _cache_empty_installed_ipa_result(udid)
+
+    command = [
+        str(installer_path),
+        "--udid",
+        udid,
+        "list",
+        "--xml",
+    ]
+    logger.info("Query installed IPA list from device.")
+    completed_process = run_command(command)
+    if completed_process is None:
+        return _cache_empty_installed_ipa_result(udid)
+
+    if completed_process.returncode != 0:
+        logger.error(
+            f"Failed to query installed IPA list. Exit code: "
+            f"{completed_process.returncode}"
+        )
+        log_command_output(completed_process, is_error=True)
+        return _cache_empty_installed_ipa_result(udid)
+
+    installed_ipa_by_bundle_id = _parse_installed_ipa_xml(
+        completed_process.stdout,
+    )
+    _installed_ipa_cache_by_udid[udid] = installed_ipa_by_bundle_id
+    _write_installed_ipa_xml_cache(completed_process.stdout)
+    return installed_ipa_by_bundle_id
+
+
+def is_already_installed_current_ipa(
+    ipa_info: IpaInfo,
+    udid: str,
+    ideviceinstaller_path: Path | None = None,
+) -> bool:
+    """Return whether the same bundle ID and version are installed already."""
+    installed_ipa_by_bundle_id = query_installed_ipa(
+        udid,
+        ideviceinstaller_path=ideviceinstaller_path,
+    )
+    installed_ipa_info = installed_ipa_by_bundle_id.get(
+        ipa_info.bundle_identifier,
+    )
+    if installed_ipa_info is None:
+        return False
+
+    if installed_ipa_info.version != ipa_info.version:
+        logger.debug(
+            f"Installed version mismatch for {ipa_info.bundle_identifier}: "
+            f"device={installed_ipa_info.version}, ipa={ipa_info.version}"
+        )
+        return False
+
+    logger.info(
+        f"Same IPA already installed: {ipa_info.bundle_identifier} "
+        f"v{ipa_info.version}"
+    )
+    return True
+
+
+def skip_current_ipa(ipa_path: Path, ipa_info: IpaInfo, udid: str) -> InstallResult:
+    """Create a successful install result for an IPA that does not need reinstalling."""
+    resolved_ipa_path = ipa_path.expanduser().resolve()
+    logger.info(
+        f"Skip install and crack installed app directly: {resolved_ipa_path.name}"
+    )
+    return InstallResult(
+        ipa_path=resolved_ipa_path,
+        udid=udid,
+        success=True,
+        return_code=0,
+        stdout="Already installed with the same bundle ID and version.",
+        stderr="",
+        failure_reason=None,
+        device_storage_full=False,
+        skipped=True,
     )
 
 
@@ -219,6 +338,178 @@ def get_ipa_compatibility_error(
             )
 
     return None
+
+
+def _parse_installed_ipa_xml(xml_output: str) -> dict[str, InstalledIpaInfo]:
+    """Parse ideviceinstaller XML output into installed IPA metadata."""
+    try:
+        installed_data = plistlib.loads(xml_output.encode("utf-8"))
+    except plistlib.InvalidFileException as error:
+        logger.error(f"Cannot parse installed IPA list: {error}")
+        return {}
+
+    if isinstance(installed_data, list):
+        return _parse_installed_ipa_list(installed_data)
+
+    if not isinstance(installed_data, dict):
+        logger.error("Installed IPA list root is not a dictionary or list.")
+        return {}
+
+    bundle_identifier = _normalize_bundle_identifier(
+        installed_data.get("CFBundleIdentifier")
+    )
+    if bundle_identifier is not None:
+        return _parse_single_installed_ipa_dict(installed_data)
+
+    installed_ipa_by_bundle_id = {}
+    for bundle_identifier, raw_app_info in installed_data.items():
+        if not isinstance(bundle_identifier, str):
+            continue
+        if not isinstance(raw_app_info, dict):
+            continue
+
+        installed_ipa_info = _create_installed_ipa_info(
+            bundle_identifier,
+            raw_app_info,
+        )
+        if installed_ipa_info is None:
+            continue
+
+        installed_ipa_by_bundle_id[bundle_identifier] = installed_ipa_info
+
+    return installed_ipa_by_bundle_id
+
+
+def _parse_installed_ipa_list(
+    installed_app_items: list,
+) -> dict[str, InstalledIpaInfo]:
+    """Parse ideviceinstaller XML when the root plist is an array."""
+    installed_ipa_by_bundle_id = {}
+
+    for raw_app_info in installed_app_items:
+        if not isinstance(raw_app_info, dict):
+            continue
+
+        bundle_identifier = _normalize_bundle_identifier(
+            raw_app_info.get("CFBundleIdentifier")
+        )
+        if bundle_identifier is None:
+            continue
+
+        installed_ipa_info = _create_installed_ipa_info(
+            bundle_identifier,
+            raw_app_info,
+        )
+        if installed_ipa_info is None:
+            continue
+
+        installed_ipa_by_bundle_id[bundle_identifier] = installed_ipa_info
+
+    return installed_ipa_by_bundle_id
+
+
+def _parse_single_installed_ipa_dict(
+    raw_app_info: dict,
+) -> dict[str, InstalledIpaInfo]:
+    """Parse one installed app dict returned by a filtered query."""
+    bundle_identifier = _normalize_bundle_identifier(
+        raw_app_info.get("CFBundleIdentifier")
+    )
+    if bundle_identifier is None:
+        return {}
+
+    installed_ipa_info = _create_installed_ipa_info(
+        bundle_identifier,
+        raw_app_info,
+    )
+    if installed_ipa_info is None:
+        return {}
+
+    return {bundle_identifier: installed_ipa_info}
+
+
+def _create_installed_ipa_info(
+    bundle_identifier: str,
+    raw_app_info: dict,
+) -> InstalledIpaInfo | None:
+    """Create installed app metadata from one ideviceinstaller item."""
+    bundle_version = _normalize_installed_version(
+        raw_app_info.get("CFBundleVersion")
+    )
+    short_version = _normalize_installed_version(
+        raw_app_info.get("CFBundleShortVersionString")
+    )
+    version = select_preferred_version(bundle_version, short_version)
+    if version is None:
+        logger.debug(f"Skip installed app without version: {bundle_identifier}")
+        return None
+
+    return InstalledIpaInfo(
+        bundle_identifier=bundle_identifier,
+        version=version,
+        bundle_version=bundle_version,
+        short_version=short_version,
+    )
+
+
+def _normalize_bundle_identifier(bundle_identifier: object) -> str | None:
+    """Normalize an installed app bundle identifier."""
+    if not isinstance(bundle_identifier, str):
+        return None
+
+    normalized_identifier = bundle_identifier.strip()
+    if not normalized_identifier:
+        return None
+    return normalized_identifier
+
+
+def _normalize_installed_version(version_value: object) -> str | None:
+    """Normalize installed app version values."""
+    if isinstance(version_value, bool):
+        return None
+    if isinstance(version_value, int):
+        return str(version_value)
+    if not isinstance(version_value, str):
+        return None
+
+    normalized_version = version_value.strip()
+    if not normalized_version:
+        return None
+    return normalized_version
+
+
+def _write_installed_ipa_xml_cache(xml_output: str):
+    """Write the raw installed IPA XML query result to an app-local file."""
+    try:
+        INSTALLED_IPA_CACHE_PATH.write_text(xml_output, encoding="utf-8")
+    except OSError as error:
+        logger.warning(f"Cannot write installed IPA cache: {error}")
+        return
+
+    logger.debug(f"Installed IPA XML saved: {INSTALLED_IPA_CACHE_PATH}")
+
+
+def _cache_empty_installed_ipa_result(
+    udid: str,
+) -> dict[str, InstalledIpaInfo]:
+    """Remember an empty query result so one broken query does not repeat per IPA."""
+    installed_ipa_by_bundle_id: dict[str, InstalledIpaInfo] = {}
+    _installed_ipa_cache_by_udid[udid] = installed_ipa_by_bundle_id
+    return installed_ipa_by_bundle_id
+
+
+def _remember_installed_ipa(udid: str, ipa_info: IpaInfo):
+    """Update the query cache after a successful install."""
+    installed_ipa_by_bundle_id = _installed_ipa_cache_by_udid.get(udid)
+    if installed_ipa_by_bundle_id is None:
+        return
+
+    installed_ipa_by_bundle_id[ipa_info.bundle_identifier] = InstalledIpaInfo(
+        bundle_identifier=ipa_info.bundle_identifier,
+        version=ipa_info.version,
+        bundle_version=ipa_info.bundle_version,
+        short_version=ipa_info.short_version,
+    )
 
 
 def _is_device_family_compatible(

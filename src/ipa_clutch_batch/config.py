@@ -71,6 +71,7 @@ ROOT_DIR = get_app_root()
 RESOURCE_ROOT = get_resource_root(ROOT_DIR)
 LOG_FILE_NAME = "IPAClutchBatch.log"
 LOG_FILE_PATH = ROOT_DIR / LOG_FILE_NAME
+INSTALLED_IPA_CACHE_PATH = ROOT_DIR / "installed_ipa_cache.xml"
 
 INPUT_DIR = ROOT_DIR / "input"
 CRACKED_DIR = INPUT_DIR / "cracked"
@@ -165,10 +166,12 @@ def init_app_env(input_dir: Path | None = None):
     runtime_cracked_dir = runtime_input_dir / "cracked"
 
     add_file_handler(LOG_FILE_PATH)
+    _clear_previous_installed_ipa_cache()
     logger.debug(get_runtime_mode_message())
     logger.debug(f"Root Path: {ROOT_DIR}")
     logger.debug(f"Resource Root Path: {RESOURCE_ROOT}")
     logger.debug(f"Log File Path: {LOG_FILE_PATH}")
+    logger.debug(f"Installed IPA Cache Path: {INSTALLED_IPA_CACHE_PATH}")
     logger.debug(f"Input Path: {runtime_input_dir}")
     logger.debug(f"Cracked Path: {runtime_cracked_dir}")
     logger.debug(f"Clutch Dump Path: {CLUTCH_DUMP_DIR}")
@@ -181,3 +184,14 @@ def init_app_env(input_dir: Path | None = None):
         f"Default SSH Tunnel: {SSH_HOST}:{SSH_LOCAL_PORT} "
         f"-> device:{SSH_DEVICE_PORT}"
     )
+
+
+def _clear_previous_installed_ipa_cache():
+    """Clear stale installed-app XML from the previous app run."""
+    try:
+        INSTALLED_IPA_CACHE_PATH.unlink(missing_ok=True)
+    except OSError as error:
+        logger.warning(f"Cannot clear installed IPA cache: {error}")
+        return
+
+    logger.debug("Previous installed IPA cache cleared.")
