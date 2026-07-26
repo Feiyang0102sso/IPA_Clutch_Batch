@@ -16,6 +16,8 @@ INFO_PLIST_SUFFIX = ".app/Info.plist"
 
 # -- Info.plist key constants --
 DISPLAY_NAME_KEY = "CFBundleDisplayName"
+BUNDLE_NAME_KEY = "CFBundleName"
+EXECUTABLE_NAME_KEY = "CFBundleExecutable"
 BUNDLE_VERSION_KEY = "CFBundleVersion"
 SHORT_VERSION_KEY = "CFBundleShortVersionString"
 BUNDLE_IDENTIFIER_KEY = "CFBundleIdentifier"
@@ -78,7 +80,7 @@ def get_single_ipa_info(ipa_path: Path) -> IpaInfo | None:
     if plist_data is None:
         return None
 
-    display_name = plist_data.get(DISPLAY_NAME_KEY)
+    display_name = select_display_name(plist_data, ipa_path.name)
     bundle_version = normalize_version_value(plist_data.get(BUNDLE_VERSION_KEY))
     short_version = normalize_version_value(plist_data.get(SHORT_VERSION_KEY))
     version = select_preferred_version(bundle_version, short_version)
@@ -89,9 +91,15 @@ def get_single_ipa_info(ipa_path: Path) -> IpaInfo | None:
     )
 
     missing_keys = []
+    has_missing_name = False
 
-    if not isinstance(display_name, str) or not display_name:
-        missing_keys.append(DISPLAY_NAME_KEY)
+    if display_name is None:
+        has_missing_name = True
+        logger.error(
+            f"Cannot find a usable app name in Info.plist ({ipa_path.name}): "
+            f"'{DISPLAY_NAME_KEY}', '{BUNDLE_NAME_KEY}', and "
+            f"'{EXECUTABLE_NAME_KEY}' are all missing or empty"
+        )
     if version is None:
         missing_keys.append(f"{BUNDLE_VERSION_KEY}' or '{SHORT_VERSION_KEY}")
     if not isinstance(bundle_identifier, str) or not bundle_identifier:
@@ -101,7 +109,7 @@ def get_single_ipa_info(ipa_path: Path) -> IpaInfo | None:
     if minimum_os_version is None:
         missing_keys.append(MINIMUM_OS_VERSION_KEY)
 
-    if missing_keys:
+    if has_missing_name or missing_keys:
         for key in missing_keys:
             logger.error(f"Cannot find '{key}' in Info.plist ({ipa_path.name})")
         return None
@@ -137,9 +145,48 @@ def select_preferred_version(
     return short_version
 
 
+def select_display_name(plist_data: dict, ipa_filename: str) -> str | None:
+    """
+    Select a usable app display name from common Info.plist keys.
+    CFBundleDisplayName → CFBundleName → CFBundleExecutable
+    """
+    display_name = normalize_text_value(plist_data.get(DISPLAY_NAME_KEY))
+    if display_name is not None:
+        return display_name
+
+    bundle_name = normalize_text_value(plist_data.get(BUNDLE_NAME_KEY))
+    if bundle_name is not None:
+        logger.warning(
+            f"Cannot find '{DISPLAY_NAME_KEY}' in Info.plist ({ipa_filename}); "
+            f"using '{BUNDLE_NAME_KEY}' instead"
+        )
+        return bundle_name
+
+    executable_name = normalize_text_value(plist_data.get(EXECUTABLE_NAME_KEY))
+    if executable_name is not None:
+        logger.warning(
+            f"Cannot find '{DISPLAY_NAME_KEY}' in Info.plist ({ipa_filename}); "
+            f"using '{EXECUTABLE_NAME_KEY}' instead"
+        )
+        return executable_name
+
+    return None
+
+
 def is_dotted_version(version: str) -> bool:
     """Return whether a version uses the x.x or x.x.x numeric form."""
     return DOTTED_VERSION_PATTERN.fullmatch(version) is not None
+
+
+def normalize_text_value(text_value: object) -> str | None:
+    """Normalize plist text values."""
+    if not isinstance(text_value, str):
+        return None
+
+    normalized_text = text_value.strip()
+    if not normalized_text:
+        return None
+    return normalized_text
 
 
 def normalize_version_value(version_value: object) -> str | None:
@@ -218,5 +265,17 @@ def _parse_device_families(plist_data: dict) -> list[int]:
     for raw_family in raw_families:
         if isinstance(raw_family, int):
             families.append(raw_family)
+            continue
+
+        normalized_family = normalize_text_value(raw_family)
+        if normalized_family is None:
+            continue
+
+        if normalized_family.isdigit():
+            logger.warning(
+                f"Invalid string value in '{DEVICE_FAMILY_KEY}': "
+                f"{normalized_family}; treating it as an integer"
+            )
+            families.append(int(normalized_family))
 
     return families
