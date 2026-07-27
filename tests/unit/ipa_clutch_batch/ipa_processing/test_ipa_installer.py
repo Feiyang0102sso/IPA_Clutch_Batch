@@ -137,6 +137,12 @@ def test_query_installed_ipa_writes_cache_and_reuses_memory(
         "mock-udid",
         "list",
         "--xml",
+        "-a",
+        "CFBundleIdentifier",
+        "-a",
+        "CFBundleVersion",
+        "-a",
+        "CFBundleShortVersionString",
     ]
     assert first_result is second_result
     assert first_result["com.example.test"].version == "1.2.3"

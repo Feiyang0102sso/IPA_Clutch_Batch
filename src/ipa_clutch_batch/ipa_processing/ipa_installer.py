@@ -65,6 +65,11 @@ class BatchInstallSummary:
 
 
 _installed_ipa_cache_by_udid: dict[str, dict[str, InstalledIpaInfo]] = {}
+INSTALLED_IPA_QUERY_ATTRIBUTES = (
+    "CFBundleIdentifier",
+    "CFBundleVersion",
+    "CFBundleShortVersionString",
+)
 
 
 @contextmanager
@@ -193,6 +198,9 @@ def query_installed_ipa(
         "list",
         "--xml",
     ]
+    for attribute_name in INSTALLED_IPA_QUERY_ATTRIBUTES:
+        command.extend(["-a", attribute_name])
+
     logger.info("Query installed IPA list from device.")
     completed_process = run_command(command)
     if completed_process is None:
