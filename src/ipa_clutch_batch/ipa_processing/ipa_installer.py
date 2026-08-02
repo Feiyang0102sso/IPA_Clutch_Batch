@@ -138,7 +138,7 @@ def install_ipa(
     if completed_process is None:
         return None
 
-    success = completed_process.returncode == 0
+    success = _is_successful_install_output(completed_process)
     device_storage_full = False
     if not success:
         device_storage_full = is_device_storage_full_error(
@@ -606,7 +606,27 @@ def _classify_install_failure(
         return "iOS rejected application verification or signing."
     if "installprohibited" in combined_output:
         return "Application installation is prohibited by the device."
+    if "device removed" in combined_output:
+        return "The device disconnected before installation completed."
     return None
+
+
+def _is_successful_install_output(
+    completed_process: subprocess.CompletedProcess[str],
+) -> bool:
+    """Return whether ideviceinstaller really completed installation."""
+    combined_output = f"{completed_process.stdout}\n{completed_process.stderr}".lower()
+
+    if completed_process.returncode != 0:
+        return False
+    if "device removed" in combined_output:
+        return False
+    if "error" in combined_output:
+        return False
+    if "failed" in combined_output:
+        return False
+
+    return "install: complete" in combined_output or "complete" in combined_output
 
 
 def is_device_storage_full_error(stdout: str, stderr: str) -> bool:

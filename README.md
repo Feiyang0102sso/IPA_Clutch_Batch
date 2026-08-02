@@ -86,6 +86,7 @@ I do not currently know whether there is a matching English tutorial on YouTube.
 
 | Version | Date | Notes |
 | --- | --- | --- |
+|  |  | - Improved install failure detection to avoid cracking stale app versions after USB/device disconnects. |
 | 1.1.0 | 2026-07-27 | - Skipped installation when the same IPA version is already installed.<br>- Fixed app name fallback for IPAs without `CFBundleDisplayName`.<br>- Fixed `UIDeviceFamily` compatibility parsing when device families are stored as strings. |
 | 1.0.1 | 2026-07-20 | - Fixed iPhone-only IPA compatibility checks so iPhone/iPod apps can be installed on iPad in compatibility mode.<br>- Improved progress-bar and log final summaries. |
 | 1.0.0 | 2026-07-18 | - Added console progress bars.<br>- Added Clutch checks and repair.<br>- Changed batch processing to install one IPA, crack one app, transfer and rename the dump, then remove the dump to save device storage. |
@@ -172,6 +173,7 @@ IPA Clutch Batch 是一个面向 Windows 的电脑端批量砸壳助手，用于
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+|  |  | - 优化安装失败判定，避免断连后继续砸旧版本。 |
 | 1.1.0 | 2026-07-27 | - 已安装相同版本 IPA 时跳过安装。<br>- 修复部分 IPA 缺少 `CFBundleDisplayName` 时无法读取名称的问题。<br>- 修复 `UIDeviceFamily` 使用字符串时的兼容性判断问题。 |
 | 1.0.1 | 2026-07-20 | - 修复 iPhone-only IPA 不能安装到 iPad 的兼容性检查问题。<br>- 优化进度条与 log 的最终总结输出。 |
 | 1.0.0 | 2026-07-18 | - 增加 console 进度条。<br>- 增加 Clutch 检测与修补。<br>- 批处理改为安装一个、砸壳一个、转移并重命名到电脑后删除 dump，减少手机存储占用。 |

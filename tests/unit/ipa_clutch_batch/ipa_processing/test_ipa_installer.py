@@ -84,6 +84,41 @@ def test_install_ipa_keeps_ascii_path_unchanged(monkeypatch, tmp_path: Path):
     assert list(tmp_path.glob("*.ipa")) == [ipa_path]
 
 
+def test_install_ipa_treats_device_removed_as_failure(monkeypatch, tmp_path: Path):
+    """Do not continue cracking when ideviceinstaller disconnects mid-install."""
+    ipa_path = tmp_path / "app_1.0.3.ipa"
+    installer_path = tmp_path / "ideviceinstaller.exe"
+    ipa_path.touch()
+    installer_path.touch()
+
+    def fake_run_command(command):
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout=(
+                "Copying 'app_1.0.3.ipa' to device... DONE.\n"
+                "Installing 'com.example.test'\n"
+                "Install: CreatingStagingDirectory (5%)\n"
+                "Install: ExtractingPackage (15%)"
+            ),
+            stderr="ideviceinstaller: Device removed",
+        )
+
+    monkeypatch.setattr(ipa_installer, "run_command", fake_run_command)
+
+    install_result = ipa_installer.install_ipa(
+        ipa_path,
+        udid="mock-udid",
+        ideviceinstaller_path=installer_path,
+    )
+
+    assert install_result is not None
+    assert not install_result.success
+    assert install_result.failure_reason == (
+        "The device disconnected before installation completed."
+    )
+
+
 def test_query_installed_ipa_writes_cache_and_reuses_memory(
     monkeypatch,
     tmp_path: Path,
